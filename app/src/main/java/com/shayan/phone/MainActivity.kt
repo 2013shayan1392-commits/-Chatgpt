@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
         } else {
             val report = dialerEligibilityReport()
             PhoneErrorLog.add(this, "ROLE_REJECTED", report)
-            diagnosticState.value = "انتخاب نقش انجام نشد.\\n\\n" + report + "\\n\\nگزارش در تنظیمات ذخیره شد."
+            diagnosticState.value = "انتخاب نقش انجام نشد.\n\n" + report + "\n\nگزارش در تنظیمات ذخیره شد."
         }
     }
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -65,7 +65,6 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        PhoneErrorLog.install(applicationContext)
         PhoneErrorLog.add(this, "APP_START", "MainActivity created; version 2.3.0")
         refreshDefaultDialer()
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -105,6 +104,7 @@ class MainActivity : ComponentActivity() {
     private fun requestDialerRole() {
         val rm = getSystemService(RoleManager::class.java)
         if (rm == null || !rm.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+            PhoneErrorLog.add(this, "ROLE_UNAVAILABLE", "RoleManager missing or ROLE_DIALER unavailable")
             Toast.makeText(this, "نقش تلفن پیش‌فرض در این دستگاه موجود نیست", Toast.LENGTH_LONG).show()
             return
         }
