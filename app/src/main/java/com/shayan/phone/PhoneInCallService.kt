@@ -10,37 +10,29 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.telecom.Call
-import android.telecom.CallAudioState
 import android.telecom.InCallService
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateListOf
 
 class PhoneInCallService : InCallService() {
-    private val callCallbacks = mutableMapOf<Call, Call.Callback>()
+    private var activeCallback: Call.Callback? = null
 
     override fun onCreate() {
         super.onCreate()
         ActiveCall.service = this
-        PhoneErrorLog.add(this, "IN_CALL_SERVICE", "onCreate")
         createIncomingCallChannel()
     }
 
     override fun onCallAudioStateChanged(audioState: android.telecom.CallAudioState) {
         super.onCallAudioStateChanged(audioState)
         ActiveCall.muted.value = audioState.isMuted
-        ActiveCall.audioRoute.value = audioState.route
-        PhoneErrorLog.add(this, "CALL_AUDIO", "muted=" + audioState.isMuted + "; route=" + audioState.route)
     }
 
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
-        if (!ActiveCall.calls.contains(call)) ActiveCall.calls.add(call)
         ActiveCall.current = call
-        PhoneErrorLog.add(this, "CALL_ADDED", "state=" + call.state + "; trackedCalls=" + ActiveCall.calls.size + "; sdk=" + Build.VERSION.SDK_INT)
 
         val callback = object : Call.Callback() {
             override fun onStateChanged(changedCall: Call, state: Int) {
-                PhoneErrorLog.add(this@PhoneInCallService, "CALL_STATE", "state=" + state)
                 if (state == Call.STATE_RINGING) {
                     showIncomingCallNotification(changedCall)
                 } else {
@@ -48,7 +40,7 @@ class PhoneInCallService : InCallService() {
                 }
             }
         }
-        callCallbacks[call] = callback
+        activeCallback = callback
         call.registerCallback(callback)
 
         if (call.state == Call.STATE_RINGING) {
@@ -57,18 +49,14 @@ class PhoneInCallService : InCallService() {
     }
 
     override fun onCallRemoved(call: Call) {
-        callCallbacks.remove(call)?.let { call.unregisterCallback(it) }
-        ActiveCall.calls.remove(call)
-        PhoneErrorLog.add(this, "CALL_REMOVED", "state=" + call.state + "; trackedCalls=" + ActiveCall.calls.size)
-        if (ActiveCall.current == call) ActiveCall.current = ActiveCall.calls.lastOrNull { it.state != Call.STATE_DISCONNECTED }
+        activeCallback?.let { call.unregisterCallback(it) }
+        activeCallback = null
+        if (ActiveCall.current == call) ActiveCall.current = null
         dismissIncomingNotification(this)
         super.onCallRemoved(call)
     }
 
     override fun onDestroy() {
-        PhoneErrorLog.add(this, "IN_CALL_SERVICE", "onDestroy")
-        callCallbacks.forEach { (call, callback) -> runCatching { call.unregisterCallback(callback) } }
-        callCallbacks.clear()
         if (ActiveCall.service === this) ActiveCall.service = null
         super.onDestroy()
     }
@@ -98,10 +86,7 @@ class PhoneInCallService : InCallService() {
     }
 
     private fun showIncomingCallNotification(call: Call) {
-        val manager = getSystemService(NotificationManager::class.java) ?: run {
-            PhoneErrorLog.add(this, "INCOMING_NOTIFICATION", "NotificationManager unavailable")
-            return
-        }
+        val manager = getSystemService(NotificationManager::class.java) ?: return
         val number = call.details.handle?.schemeSpecificPart ?: "شماره ناشناس"
         val callerName = call.details.callerDisplayName?.takeIf { it.isNotBlank() } ?: number
 
@@ -179,17 +164,10 @@ object ActiveCall {
         set(value) { state.value = value }
 
     val muted = mutableStateOf(false)
-    val audioRoute = mutableStateOf(CallAudioState.ROUTE_EARPIECE)
-    val calls = mutableStateListOf<Call>()
 
     fun setMuted(value: Boolean) {
-        val activeService = service
-        if (activeService == null) {
-            return
-        } else {
-            runCatching { activeService.setMuted(value) }
-                .onFailure { PhoneErrorLog.exception(activeService, "MUTE_FAILED", it) }
-        }
+        service?.setMuted(value)
+        muted.value = value
     }
 
     @Volatile
