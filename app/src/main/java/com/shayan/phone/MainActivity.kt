@@ -262,9 +262,9 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     CallControl("بلندگو", if (speaker) Icons.Default.VolumeUp else Icons.Default.VolumeDown) {
                         speaker = !speaker
-                        call.setAudioRoute(if (speaker) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_EARPIECE)
+                        ActiveCall.service?.setAudioRoute(if (speaker) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_EARPIECE)
                     }
-                    CallControl("بی‌صدا", if (muted) Icons.Default.MicOff else Icons.Default.Mic) { muted = !muted; call.setMute(muted) }
+                    CallControl("بی‌صدا", if (muted) Icons.Default.MicOff else Icons.Default.Mic) { muted = !muted; ActiveCall.service?.setMuted(muted) }
                     CallControl("صفحه‌کلید", Icons.Default.Dialpad) { keypad = true }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
