@@ -22,6 +22,11 @@ class PhoneInCallService : InCallService() {
         createIncomingCallChannel()
     }
 
+    override fun onCallAudioStateChanged(audioState: android.telecom.CallAudioState) {
+        super.onCallAudioStateChanged(audioState)
+        ActiveCall.muted.value = audioState.isMuted
+    }
+
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
         ActiveCall.current = call
@@ -157,6 +162,13 @@ object ActiveCall {
     var current: Call?
         get() = state.value
         set(value) { state.value = value }
+
+    val muted = mutableStateOf(false)
+
+    fun setMuted(value: Boolean) {
+        service?.setMuted(value)
+        muted.value = value
+    }
 
     @Volatile
     var service: PhoneInCallService? = null
