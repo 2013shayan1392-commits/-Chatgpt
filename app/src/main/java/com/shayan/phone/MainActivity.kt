@@ -308,7 +308,7 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var state by remember { mutableIntStateOf(call.state) }
     var speaker by remember { mutableStateOf(false) }
-    var muted by remember { mutableStateOf(false) }
+    val muted by ActiveCall.muted
     var keypad by remember { mutableStateOf(false) }
     var digits by remember { mutableStateOf("") }
     DisposableEffect(call) {
@@ -344,7 +344,7 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
                         speaker = !speaker
                         ActiveCall.service?.setAudioRoute(if (speaker) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_EARPIECE)
                     }
-                    CallControl("بی‌صدا", if (muted) Icons.Default.MicOff else Icons.Default.Mic) { muted = !muted; ActiveCall.service?.setMuted(muted) }
+                    CallControl("بی‌صدا", if (muted) Icons.Default.MicOff else Icons.Default.Mic) { ActiveCall.setMuted(!muted) }
                     CallControl("صفحه‌کلید", Icons.Default.Dialpad) { keypad = true }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
