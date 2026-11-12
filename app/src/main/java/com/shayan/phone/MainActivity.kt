@@ -123,15 +123,32 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ShayanPhoneTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    val colors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (darkTheme) androidx.compose.material3.dynamicDarkColorScheme(context)
+        else androidx.compose.material3.dynamicLightColorScheme(context)
+    } else if (darkTheme) {
+        darkColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFFB8C7FF),
             onPrimary = androidx.compose.ui.graphics.Color(0xFF14264F),
             secondary = androidx.compose.ui.graphics.Color(0xFFBEC6DC),
             background = androidx.compose.ui.graphics.Color(0xFF10131A),
             surface = androidx.compose.ui.graphics.Color(0xFF191E28),
             surfaceVariant = androidx.compose.ui.graphics.Color(0xFF252C39)
-        ),
+        )
+    } else {
+        lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFF405F91),
+            secondary = androidx.compose.ui.graphics.Color(0xFF565F71),
+            background = androidx.compose.ui.graphics.Color(0xFFF8F9FF),
+            surface = androidx.compose.ui.graphics.Color(0xFFF8F9FF),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE1E6F0)
+        )
+    }
+
+    MaterialTheme(
+        colorScheme = colors,
         content = content
     )
 }
