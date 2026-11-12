@@ -42,11 +42,20 @@ data class Person(val name: String, val number: String)
 data class Recent(val name: String, val number: String, val type: Int)
 
 class MainActivity : ComponentActivity() {
-    private val roleLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    private var defaultDialerState = mutableStateOf(false)
+    private val roleLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        refreshDefaultDialer()
+        if (result.resultCode == RESULT_OK && defaultDialerState.value) {
+            Toast.makeText(this, "Shayan Phone به‌عنوان تلفن پیش‌فرض انتخاب شد", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(this, "انتخاب انجام نشد. بررسی: ${dialerEligibilityReport()}", Toast.LENGTH_LONG).show()
+        }
+    }
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        refreshDefaultDialer()
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -54,6 +63,7 @@ class MainActivity : ComponentActivity() {
             ShayanPhoneTheme {
                 PhoneApp(
                     context = this,
+                    isDefaultDialer = defaultDialerState.value,
                     onDefault = { requestDialerRole() },
                     onContactsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS)) },
                     onHistoryPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG)) },
@@ -62,13 +72,51 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    override fun onResume() {
+        super.onResume()
+        refreshDefaultDialer()
+    }
+
+    private fun refreshDefaultDialer() {
+        val rm = getSystemService(RoleManager::class.java)
+        defaultDialerState.value = rm?.isRoleHeld(RoleManager.ROLE_DIALER) == true
+    }
+
     private fun requestDialerRole() {
         val rm = getSystemService(RoleManager::class.java)
-        if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_DIALER) && !rm.isRoleHeld(RoleManager.ROLE_DIALER)) {
-            roleLauncher.launch(rm.createRequestRoleIntent(RoleManager.ROLE_DIALER))
-        } else {
-            Toast.makeText(this, if (rm?.isRoleHeld(RoleManager.ROLE_DIALER) == true) "برنامه تلفن پیش‌فرض است" else "نقش تلفن در این دستگاه در دسترس نیست", Toast.LENGTH_LONG).show()
+        if (rm == null || !rm.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+            Toast.makeText(this, "نقش تلفن پیش‌فرض در این دستگاه موجود نیست", Toast.LENGTH_LONG).show()
+            return
         }
+        if (rm.isRoleHeld(RoleManager.ROLE_DIALER)) {
+            refreshDefaultDialer()
+            Toast.makeText(this, "برنامه تلفن پیش‌فرض است", Toast.LENGTH_LONG).show()
+            return
+        }
+        runCatching {
+            roleLauncher.launch(rm.createRequestRoleIntent(RoleManager.ROLE_DIALER))
+        }.onFailure {
+            Toast.makeText(this, "خطا در درخواست نقش تلفن: ${it.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun dialerEligibilityReport(): String {
+        val pm = packageManager
+        fun hasOwnActivity(intent: Intent): Boolean = pm.queryIntentActivities(
+            intent, PackageManager.MATCH_DEFAULT_ONLY
+        ).any { it.activityInfo.packageName == packageName }
+
+        val dial = hasOwnActivity(Intent(Intent.ACTION_DIAL))
+        val tel = hasOwnActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:123")))
+        val service = pm.queryIntentServices(
+            Intent("android.telecom.InCallService").setPackage(packageName), 0
+        ).firstOrNull { it.serviceInfo.packageName == packageName }?.serviceInfo
+        val serviceFound = service != null
+        val permissionOk = service?.permission == "android.permission.BIND_INCALL_SERVICE"
+        val exportedOk = service?.exported == true
+        val roleAvailable = getSystemService(RoleManager::class.java)
+            ?.isRoleAvailable(RoleManager.ROLE_DIALER) == true
+        return "DIAL=$dial, tel=$tel, Service=$serviceFound, Permission=$permissionOk, Exported=$exportedOk, Role=$roleAvailable"
     }
 }
 
@@ -90,6 +138,7 @@ fun ShayanPhoneTheme(content: @Composable () -> Unit) {
 @Composable
 fun PhoneApp(
     context: Context,
+    isDefaultDialer: Boolean,
     onDefault: () -> Unit,
     onContactsPermission: () -> Unit,
     onHistoryPermission: () -> Unit,
@@ -100,7 +149,6 @@ fun PhoneApp(
     var search by remember { mutableStateOf("") }
     var contacts by remember { mutableStateOf(emptyList<Person>()) }
     var recents by remember { mutableStateOf(emptyList<Recent>()) }
-    var defaultDialer by remember { mutableStateOf(context.getSystemService(TelecomManager::class.java)?.defaultDialerPackage == context.packageName) }
     val activeCall = ActiveCall.current
     LaunchedEffect(tab) {
         if (tab == 1 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) contacts = loadContacts(context)
@@ -110,10 +158,9 @@ fun PhoneApp(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBarPhone(
-                isDefault = defaultDialer,
+                isDefault = isDefaultDialer,
                 onDefault = {
                     onDefault()
-                    defaultDialer = context.getSystemService(TelecomManager::class.java)?.defaultDialerPackage == context.packageName
                 }
             )
         },
