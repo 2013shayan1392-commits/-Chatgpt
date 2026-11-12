@@ -225,7 +225,7 @@ fun HistoryScreen(recents: List<Recent>, onCall: (String) -> Unit) {
 }
 
 @Composable
-fun InCallPanel(call: Call, onFinish: () -> Unit) {
+fun InCallPanel(call: Call, onFinish: () -> Unit) {\n    val context = androidx.compose.ui.platform.LocalContext.current
     var state by remember { mutableIntStateOf(call.state) }
     var speaker by remember { mutableStateOf(false) }
     var muted by remember { mutableStateOf(false) }
@@ -269,7 +269,7 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     CallControl("انتظار", Icons.Default.Pause) { if (state == Call.STATE_HOLDING) call.unhold() else call.hold() }
-                    CallControl("افزودن تماس", Icons.Default.PersonAdd) { }
+                    CallControl("افزودن تماس", Icons.Default.PersonAdd) {\n                        call.hold()\n                        context.startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))\n                    }
                 }
             }
             FilledIconButton(onClick = { call.disconnect() }, modifier = Modifier.size(70.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.CallEnd, "پایان تماس", modifier = Modifier.size(30.dp)) }
