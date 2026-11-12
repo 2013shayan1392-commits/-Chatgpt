@@ -5,7 +5,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  actions: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,10 +15,12 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
       - name: Build debug APK
         run: gradle assembleDebug
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: SystemMonitor-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
