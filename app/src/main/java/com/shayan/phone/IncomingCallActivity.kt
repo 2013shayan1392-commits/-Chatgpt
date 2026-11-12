@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 class IncomingCallActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PhoneErrorLog.add(this, "INCOMING_ACTIVITY", "onCreate; callPresent=" + (ActiveCall.current != null))
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -30,6 +31,7 @@ class IncomingCallActivity : ComponentActivity() {
             ShayanPhoneTheme {
                 val call = ActiveCall.current
                 if (call == null) {
+                    PhoneErrorLog.add(this@IncomingCallActivity, "INCOMING_ACTIVITY", "No active call on UI creation")
                     LaunchedEffect(Unit) { finish() }
                 } else {
                     InCallPanel(call, onFinish = {
