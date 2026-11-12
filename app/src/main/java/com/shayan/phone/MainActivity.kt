@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class Person(val name: String, val number: String)
 data class Recent(val name: String, val number: String, val type: Int)
@@ -223,7 +225,7 @@ fun PhoneApp(
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            if (activeCall != null) InCallPanel(activeCall, onFinish = { ActiveCall.current = null })
+            if (activeCall != null) InCallPanel(activeCall, onFinish = { ActiveCall.current = ActiveCall.calls.lastOrNull { it.state != Call.STATE_DISCONNECTED } })
             else when (tab) {
                 0 -> DialerScreen(number, { number = it }, {
                     if (number.isBlank()) return@DialerScreen
@@ -375,6 +377,7 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
     val muted by ActiveCall.muted
     var keypad by remember { mutableStateOf(false) }
     var digits by remember { mutableStateOf("") }
+    val callScope = rememberCoroutineScope()
     var showAddCallDialog by remember { mutableStateOf(false) }
     var newCallNumber by remember { mutableStateOf("") }
     val otherCalls = ActiveCall.calls.filter { it != call && it.state != Call.STATE_DISCONNECTED }
@@ -405,7 +408,7 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
                 Text(digits, style = MaterialTheme.typography.titleLarge)
                 listOf("1","2","3","4","5","6","7","8","9","*","0","#").chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        row.forEach { k -> FilledTonalButton(onClick = { digits += k; runCatching { call.playDtmfTone(k[0]); call.stopDtmfTone() }.onFailure { PhoneErrorLog.exception(context, "DTMF_FAILED", it) } }, modifier = Modifier.size(62.dp), shape = CircleShape) { Text(k) } }
+                        row.forEach { k -> FilledTonalButton(onClick = { digits += k; callScope.launch { runCatching { call.playDtmfTone(k[0]); delay(140); call.stopDtmfTone() }.onFailure { PhoneErrorLog.exception(context, "DTMF_FAILED", it) } } }, modifier = Modifier.size(62.dp), shape = CircleShape) { Text(k) } }
                     }
                 }
                 TextButton(onClick = { keypad = false }) { Text("بازگشت") }
