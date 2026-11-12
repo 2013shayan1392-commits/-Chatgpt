@@ -19,20 +19,24 @@ class PhoneInCallService : InCallService() {
     override fun onCreate() {
         super.onCreate()
         ActiveCall.service = this
+        PhoneErrorLog.add(this, "IN_CALL_SERVICE", "onCreate")
         createIncomingCallChannel()
     }
 
     override fun onCallAudioStateChanged(audioState: android.telecom.CallAudioState) {
         super.onCallAudioStateChanged(audioState)
         ActiveCall.muted.value = audioState.isMuted
+        PhoneErrorLog.add(this, "CALL_AUDIO", "muted=" + audioState.isMuted + "; route=" + audioState.route)
     }
 
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
         ActiveCall.current = call
+        PhoneErrorLog.add(this, "CALL_ADDED", "state=" + call.state + "; sdk=" + Build.VERSION.SDK_INT)
 
         val callback = object : Call.Callback() {
             override fun onStateChanged(changedCall: Call, state: Int) {
+                PhoneErrorLog.add(this@PhoneInCallService, "CALL_STATE", "state=" + state)
                 if (state == Call.STATE_RINGING) {
                     showIncomingCallNotification(changedCall)
                 } else {
@@ -51,12 +55,14 @@ class PhoneInCallService : InCallService() {
     override fun onCallRemoved(call: Call) {
         activeCallback?.let { call.unregisterCallback(it) }
         activeCallback = null
+        PhoneErrorLog.add(this, "CALL_REMOVED", "state=" + call.state)
         if (ActiveCall.current == call) ActiveCall.current = null
         dismissIncomingNotification(this)
         super.onCallRemoved(call)
     }
 
     override fun onDestroy() {
+        PhoneErrorLog.add(this, "IN_CALL_SERVICE", "onDestroy")
         if (ActiveCall.service === this) ActiveCall.service = null
         super.onDestroy()
     }
@@ -86,7 +92,10 @@ class PhoneInCallService : InCallService() {
     }
 
     private fun showIncomingCallNotification(call: Call) {
-        val manager = getSystemService(NotificationManager::class.java) ?: return
+        val manager = getSystemService(NotificationManager::class.java) ?: run {
+            PhoneErrorLog.add(this, "INCOMING_NOTIFICATION", "NotificationManager unavailable")
+            return
+        }
         val number = call.details.handle?.schemeSpecificPart ?: "شماره ناشناس"
         val callerName = call.details.callerDisplayName?.takeIf { it.isNotBlank() } ?: number
 
