@@ -1,7 +1,7 @@
 name: Shayan Phone APK
 on:
   push:
-    branches: [phone-contacts-app]
+    branches: [phone-contacts-app, 2.4-accessibility-recorder-test]
   workflow_dispatch:
 permissions:
   contents: read
