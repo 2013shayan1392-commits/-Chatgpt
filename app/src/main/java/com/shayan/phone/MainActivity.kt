@@ -370,14 +370,20 @@ fun HistoryScreen(recents: List<Recent>, onCall: (String) -> Unit) {
 @Composable
 fun InCallPanel(call: Call, onFinish: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var state by remember { mutableIntStateOf(call.state) }
-    var speaker by remember { mutableStateOf(false) }
+    var state by remember(call) { mutableIntStateOf(call.state) }
+    val speaker = ActiveCall.audioRoute.value == CallAudioState.ROUTE_SPEAKER
     val muted by ActiveCall.muted
     var keypad by remember { mutableStateOf(false) }
     var digits by remember { mutableStateOf("") }
+    var showAddCallDialog by remember { mutableStateOf(false) }
+    var newCallNumber by remember { mutableStateOf("") }
+    val otherCalls = ActiveCall.calls.filter { it != call && it.state != Call.STATE_DISCONNECTED }
     DisposableEffect(call) {
         val callback = object : Call.Callback() {
-            override fun onStateChanged(c: Call, s: Int) { state = s; if (s == Call.STATE_DISCONNECTED) onFinish() }
+            override fun onStateChanged(c: Call, s: Int) {
+                state = s
+                if (s == Call.STATE_DISCONNECTED && ActiveCall.current == c) onFinish()
+            }
         }
         call.registerCallback(callback)
         onDispose { call.unregisterCallback(callback) }
@@ -391,39 +397,66 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
         Text(call.details.handle?.schemeSpecificPart ?: "شماره ناشناس", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (state == Call.STATE_RINGING) {
             Row(horizontalArrangement = Arrangement.spacedBy(30.dp)) {
-                FilledIconButton(onClick = { call.reject(false, null) }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.CallEnd, "رد تماس") }
-                FilledIconButton(onClick = { call.answer(VideoProfile.STATE_AUDIO_ONLY) }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF4F9B70))) { Icon(Icons.Default.Call, "پاسخ") }
+                FilledIconButton(onClick = { runCatching { call.reject(false, null) }.onFailure { PhoneErrorLog.exception(context, "REJECT_CALL_FAILED", it) } }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.CallEnd, "رد تماس") }
+                FilledIconButton(onClick = { runCatching { call.answer(VideoProfile.STATE_AUDIO_ONLY) }.onFailure { PhoneErrorLog.exception(context, "ANSWER_CALL_FAILED", it) } }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF4F9B70))) { Icon(Icons.Default.Call, "پاسخ") }
             }
         } else {
             if (keypad) {
                 Text(digits, style = MaterialTheme.typography.titleLarge)
                 listOf("1","2","3","4","5","6","7","8","9","*","0","#").chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        row.forEach { k -> FilledTonalButton(onClick = { digits += k; call.playDtmfTone(k[0]); call.stopDtmfTone() }, modifier = Modifier.size(62.dp), shape = CircleShape) { Text(k) } }
+                        row.forEach { k -> FilledTonalButton(onClick = { digits += k; runCatching { call.playDtmfTone(k[0]); call.stopDtmfTone() }.onFailure { PhoneErrorLog.exception(context, "DTMF_FAILED", it) } }, modifier = Modifier.size(62.dp), shape = CircleShape) { Text(k) } }
                     }
                 }
+                TextButton(onClick = { keypad = false }) { Text("بازگشت") }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     CallControl("بلندگو", if (speaker) Icons.Default.VolumeUp else Icons.Default.VolumeDown) {
-                        speaker = !speaker
-                        ActiveCall.service?.setAudioRoute(if (speaker) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_EARPIECE)
+                        val route = if (speaker) CallAudioState.ROUTE_EARPIECE else CallAudioState.ROUTE_SPEAKER
+                        runCatching { ActiveCall.service?.setAudioRoute(route) }.onFailure { PhoneErrorLog.exception(context, "AUDIO_ROUTE_FAILED", it) }
                     }
                     CallControl("بی‌صدا", if (muted) Icons.Default.MicOff else Icons.Default.Mic) { ActiveCall.setMuted(!muted) }
                     CallControl("صفحه‌کلید", Icons.Default.Dialpad) { keypad = true }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    CallControl("انتظار", Icons.Default.Pause) { if (state == Call.STATE_HOLDING) call.unhold() else call.hold() }
-                    CallControl("افزودن تماس", Icons.Default.PersonAdd) {
-                        call.hold()
-                        context.startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    CallControl("انتظار", Icons.Default.Pause) { runCatching { if (state == Call.STATE_HOLDING) call.unhold() else call.hold() }.onFailure { PhoneErrorLog.exception(context, "HOLD_FAILED", it) } }
+                    CallControl("افزودن تماس", Icons.Default.PersonAdd) { showAddCallDialog = true }
+                }
+                otherCalls.forEachIndexed { index, other ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { ActiveCall.current = other }) { Text("رفتن به تماس " + (index + 2)) }
+                        if (call.conferenceableCalls.contains(other)) {
+                            TextButton(onClick = { runCatching { call.conference(other) }.onFailure { PhoneErrorLog.exception(context, "CONFERENCE_FAILED", it) } }) { Text("ادغام") }
+                        }
                     }
                 }
             }
-            FilledIconButton(onClick = { call.disconnect() }, modifier = Modifier.size(70.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.CallEnd, "پایان تماس", modifier = Modifier.size(30.dp)) }
+            FilledIconButton(onClick = { runCatching { call.disconnect() }.onFailure { PhoneErrorLog.exception(context, "DISCONNECT_FAILED", it) } }, modifier = Modifier.size(70.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.CallEnd, "پایان تماس", modifier = Modifier.size(30.dp)) }
         }
     }
+    if (showAddCallDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddCallDialog = false },
+            title = { Text("افزودن تماس") },
+            text = { OutlinedTextField(value = newCallNumber, onValueChange = { newCallNumber = it }, singleLine = true, label = { Text("شماره تلفن") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newCallNumber.isNotBlank()) {
+                        runCatching {
+                            call.hold()
+                            val telecom = context.getSystemService(TelecomManager::class.java) ?: error("TelecomManager unavailable")
+                            telecom.placeCall(Uri.fromParts("tel", newCallNumber, null), Bundle())
+                            PhoneErrorLog.add(context, "SECOND_CALL", "TelecomManager.placeCall invoked")
+                            showAddCallDialog = false
+                            newCallNumber = ""
+                        }.onFailure { PhoneErrorLog.exception(context, "SECOND_CALL_FAILED", it) }
+                    }
+                }) { Text("تماس") }
+            },
+            dismissButton = { TextButton(onClick = { showAddCallDialog = false }) { Text("انصراف") } }
+        )
+    }
 }
-
 @Composable
 fun CallControl(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(88.dp).clickable(onClick = onClick)) {
