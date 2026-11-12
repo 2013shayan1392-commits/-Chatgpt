@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
+        android:name=".ShayanPhoneApplication"
         android:allowBackup="false"
         android:label="Shayan Phone"
         android:supportsRtl="true"
