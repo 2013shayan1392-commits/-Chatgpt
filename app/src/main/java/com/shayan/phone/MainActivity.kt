@@ -12,7 +12,6 @@ import android.provider.CallLog
 import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
-import android.telecom.TelecomManager
 import android.telecom.VideoProfile
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -109,14 +108,16 @@ class MainActivity : ComponentActivity() {
         val dial = hasOwnActivity(Intent(Intent.ACTION_DIAL))
         val tel = hasOwnActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:123")))
         val service = pm.queryIntentServices(
-            Intent("android.telecom.InCallService").setPackage(packageName), 0
+            Intent("android.telecom.InCallService").setPackage(packageName), PackageManager.GET_META_DATA
         ).firstOrNull { it.serviceInfo.packageName == packageName }?.serviceInfo
         val serviceFound = service != null
         val permissionOk = service?.permission == "android.permission.BIND_INCALL_SERVICE"
         val exportedOk = service?.exported == true
+        val inCallUi = service?.metaData?.getBoolean("android.telecom.IN_CALL_SERVICE_UI", false) == true
+        val carModeUi = service?.metaData?.getBoolean("android.telecom.IN_CALL_SERVICE_CAR_MODE_UI", false) == true
         val roleAvailable = getSystemService(RoleManager::class.java)
             ?.isRoleAvailable(RoleManager.ROLE_DIALER) == true
-        return "DIAL=$dial, tel=$tel, Service=$serviceFound, Permission=$permissionOk, Exported=$exportedOk, Role=$roleAvailable"
+        return "DIAL=$dial, tel=$tel, Service=$serviceFound, Permission=$permissionOk, Exported=$exportedOk, UI=$inCallUi, CarUI=$carModeUi, Role=$roleAvailable"
     }
 }
 
