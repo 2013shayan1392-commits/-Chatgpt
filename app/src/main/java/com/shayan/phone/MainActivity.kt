@@ -277,9 +277,9 @@ fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit, onLogs: () -> Unit
     TopAppBar(
         title = { Column { Text("تلفن", fontWeight = FontWeight.Bold); Text("SHAYAN PHONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) } },
         actions = {
-            IconButton(onClick = onLogs) { Icon(Icons.Default.BugReport, contentDescription = "گزارش خطا") }
+            IconButton(onClick = onLogs) { Icon(Icons.Default.Settings, contentDescription = "گزارش خطا") }
             TextButton(onClick = onDefault) {
-                Icon(if (isDefault) Icons.Default.Verified else Icons.Default.Settings, null)
+                Icon(if (isDefault) Icons.Default.Verified else Icons.Default.PhoneAndroid, null)
                 Spacer(Modifier.width(5.dp))
                 Text(if (isDefault) "پیش‌فرض" else "تنظیم")
             }
