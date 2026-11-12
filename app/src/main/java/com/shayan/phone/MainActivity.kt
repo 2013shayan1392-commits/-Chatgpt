@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.telecom.Call
@@ -43,8 +44,12 @@ data class Recent(val name: String, val number: String, val type: Int)
 class MainActivity : ComponentActivity() {
     private val roleLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             ShayanPhoneTheme {
                 PhoneApp(
