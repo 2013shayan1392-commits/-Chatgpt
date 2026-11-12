@@ -221,9 +221,15 @@ fun PhoneApp(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     TopAppBar(
         title = { Column { Text("تلفن", fontWeight = FontWeight.Bold); Text("SHAYAN PHONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) } },
         actions = {
+            IconButton(onClick = {
+                context.startActivity(Intent(context, HuaweiRecorderDiagnosticsActivity::class.java))
+            }) {
+                Icon(Icons.Default.Info, "بررسی سازگاری هواوی")
+            }
             TextButton(onClick = onDefault) {
                 Icon(if (isDefault) Icons.Default.Verified else Icons.Default.Settings, null)
                 Spacer(Modifier.width(5.dp))
