@@ -12,9 +12,10 @@ import android.os.Build
 import android.telecom.Call
 import android.telecom.InCallService
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 
 class PhoneInCallService : InCallService() {
-    private var activeCallback: Call.Callback? = null
+    private val callCallbacks = mutableMapOf<Call, Call.Callback>()
 
     override fun onCreate() {
         super.onCreate()
@@ -26,13 +27,15 @@ class PhoneInCallService : InCallService() {
     override fun onCallAudioStateChanged(audioState: android.telecom.CallAudioState) {
         super.onCallAudioStateChanged(audioState)
         ActiveCall.muted.value = audioState.isMuted
+        ActiveCall.audioRoute.value = audioState.route
         PhoneErrorLog.add(this, "CALL_AUDIO", "muted=" + audioState.isMuted + "; route=" + audioState.route)
     }
 
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
+        if (!ActiveCall.calls.contains(call)) ActiveCall.calls.add(call)
         ActiveCall.current = call
-        PhoneErrorLog.add(this, "CALL_ADDED", "state=" + call.state + "; sdk=" + Build.VERSION.SDK_INT)
+        PhoneErrorLog.add(this, "CALL_ADDED", "state=" + call.state + "; trackedCalls=" + ActiveCall.calls.size + "; sdk=" + Build.VERSION.SDK_INT)
 
         val callback = object : Call.Callback() {
             override fun onStateChanged(changedCall: Call, state: Int) {
@@ -44,7 +47,7 @@ class PhoneInCallService : InCallService() {
                 }
             }
         }
-        activeCallback = callback
+        callCallbacks[call] = callback
         call.registerCallback(callback)
 
         if (call.state == Call.STATE_RINGING) {
@@ -53,16 +56,18 @@ class PhoneInCallService : InCallService() {
     }
 
     override fun onCallRemoved(call: Call) {
-        activeCallback?.let { call.unregisterCallback(it) }
-        activeCallback = null
-        PhoneErrorLog.add(this, "CALL_REMOVED", "state=" + call.state)
-        if (ActiveCall.current == call) ActiveCall.current = null
+        callCallbacks.remove(call)?.let { call.unregisterCallback(it) }
+        ActiveCall.calls.remove(call)
+        PhoneErrorLog.add(this, "CALL_REMOVED", "state=" + call.state + "; trackedCalls=" + ActiveCall.calls.size)
+        if (ActiveCall.current == call) ActiveCall.current = ActiveCall.calls.lastOrNull { it.state != Call.STATE_DISCONNECTED }
         dismissIncomingNotification(this)
         super.onCallRemoved(call)
     }
 
     override fun onDestroy() {
         PhoneErrorLog.add(this, "IN_CALL_SERVICE", "onDestroy")
+        callCallbacks.forEach { (call, callback) -> runCatching { call.unregisterCallback(callback) } }
+        callCallbacks.clear()
         if (ActiveCall.service === this) ActiveCall.service = null
         super.onDestroy()
     }
@@ -173,10 +178,17 @@ object ActiveCall {
         set(value) { state.value = value }
 
     val muted = mutableStateOf(false)
+    val audioRoute = mutableStateOf(CallAudioState.ROUTE_EARPIECE)
+    val calls = mutableStateListOf<Call>()
 
     fun setMuted(value: Boolean) {
-        service?.setMuted(value)
-        muted.value = value
+        val activeService = service
+        if (activeService == null) {
+            return
+        } else {
+            runCatching { activeService.setMuted(value) }
+                .onFailure { PhoneErrorLog.exception(activeService, "MUTE_FAILED", it) }
+        }
     }
 
     @Volatile
