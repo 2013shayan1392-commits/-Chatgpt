@@ -44,12 +44,13 @@ data class Recent(val name: String, val number: String, val type: Int)
 
 class MainActivity : ComponentActivity() {
     private var defaultDialerState = mutableStateOf(false)
+    private var diagnosticState = mutableStateOf<String?>(null)
     private val roleLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         refreshDefaultDialer()
         if (result.resultCode == RESULT_OK && defaultDialerState.value) {
             Toast.makeText(this, "Shayan Phone به‌عنوان تلفن پیش‌فرض انتخاب شد", Toast.LENGTH_LONG).show()
         } else {
-            Toast.makeText(this, "انتخاب انجام نشد. بررسی: ${dialerEligibilityReport()}", Toast.LENGTH_LONG).show()
+            diagnosticState.value = "انتخاب نقش انجام نشد.\n\n${dialerEligibilityReport()}\n\nاین گزارش را کامل برای بررسی ارسال کن."
         }
     }
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
@@ -70,6 +71,14 @@ class MainActivity : ComponentActivity() {
                     onHistoryPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG)) },
                     onCallPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE)) }
                 )
+                diagnosticState.value?.let { report ->
+                    AlertDialog(
+                        onDismissRequest = { diagnosticState.value = null },
+                        title = { Text("گزارش سازگاری تلفن پیش‌فرض") },
+                        text = { Text(report, textAlign = TextAlign.Start) },
+                        confirmButton = { TextButton(onClick = { diagnosticState.value = null }) { Text("متوجه شدم") } }
+                    )
+                }
             }
         }
     }
@@ -107,19 +116,20 @@ class MainActivity : ComponentActivity() {
             intent, PackageManager.MATCH_DEFAULT_ONLY
         ).any { it.activityInfo.packageName == packageName }
 
-        val dial = hasOwnActivity(Intent(Intent.ACTION_DIAL))
-        val tel = hasOwnActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:123")))
+        val dial = hasOwnActivity(Intent(Intent.ACTION_DIAL).addCategory(Intent.CATEGORY_DEFAULT))
+        val tel = hasOwnActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:123")).addCategory(Intent.CATEGORY_DEFAULT))
         val service = pm.queryIntentServices(
             Intent("android.telecom.InCallService").setPackage(packageName), PackageManager.GET_META_DATA
         ).firstOrNull { it.serviceInfo.packageName == packageName }?.serviceInfo
         val serviceFound = service != null
         val permissionOk = service?.permission == "android.permission.BIND_INCALL_SERVICE"
         val exportedOk = service?.exported == true
+        val enabledOk = service?.enabled == true
         val inCallUi = service?.metaData?.getBoolean("android.telecom.IN_CALL_SERVICE_UI", false) == true
         val carModeUi = service?.metaData?.getBoolean("android.telecom.IN_CALL_SERVICE_CAR_MODE_UI", false) == true
         val roleAvailable = getSystemService(RoleManager::class.java)
             ?.isRoleAvailable(RoleManager.ROLE_DIALER) == true
-        return "DIAL=$dial, tel=$tel, Service=$serviceFound, Permission=$permissionOk, Exported=$exportedOk, UI=$inCallUi, CarUI=$carModeUi, Role=$roleAvailable"
+        return "DIAL=$dial\ntel=$tel\nService=$serviceFound\nPermission=$permissionOk\nExported=$exportedOk\nEnabled=$enabledOk\nUI=$inCallUi\nCarUI=$carModeUi\nRoleAvailable=$roleAvailable\nPackage=$packageName"
     }
 }
 
