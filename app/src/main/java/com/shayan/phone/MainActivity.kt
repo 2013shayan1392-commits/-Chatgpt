@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
@@ -223,37 +225,44 @@ fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
 
 @Composable
 fun DialerScreen(number: String, onNumber: (String) -> Unit, onCall: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
         Text("شماره‌گیری", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
-        Spacer(Modifier.height(10.dp))
         OutlinedTextField(
-            value = number, onValueChange = onNumber, modifier = Modifier.fillMaxWidth(),
+            value = number, onValueChange = onNumber, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp, max = 60.dp),
             placeholder = { Text("شماره تلفن") }, singleLine = true,
-            textStyle = MaterialTheme.typography.headlineMedium.copy(textAlign = TextAlign.Center),
+            textStyle = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             trailingIcon = { IconButton(onClick = { onNumber(number.dropLast(1)) }) { Icon(Icons.Default.Backspace, null) } }
         )
-        Spacer(Modifier.weight(1f))
         val keys = listOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL", "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "*" to "", "0" to "+", "#" to "")
-        keys.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                row.forEach { (key, letters) ->
-                    Column(
-                        Modifier.padding(3.dp).size(82.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                            .clickable { onNumber(number + key) },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(key, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Medium)
-                        if (letters.isNotEmpty()) Text(letters, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            keys.chunked(3).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    row.forEach { (key, letters) ->
+                        Column(
+                            Modifier.padding(2.dp).size(68.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                .clickable { onNumber(number + key) },
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(key, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Medium)
+                            if (letters.isNotEmpty()) Text(letters, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                        }
                     }
                 }
             }
         }
-        Spacer(Modifier.height(14.dp))
-        FilledIconButton(onClick = onCall, modifier = Modifier.size(68.dp), shape = CircleShape, colors = IconButtonDefaults.filledIconButtonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF4F9B70))) {
-            Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(30.dp))
+        FilledIconButton(
+            onClick = onCall,
+            modifier = Modifier.size(60.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledIconButtonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF35A853))
+        ) {
+            Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(28.dp))
         }
-        Spacer(Modifier.weight(0.5f))
     }
 }
 
