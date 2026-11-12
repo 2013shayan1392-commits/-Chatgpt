@@ -1,7 +1,7 @@
 name: Shayan Phone APK
 on:
   push:
-    branches: [phone-contacts-app]
+    branches: [phone-contacts-app, huawei-compatibility-2.4]
   workflow_dispatch:
 permissions:
   contents: read
