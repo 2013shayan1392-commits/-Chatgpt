@@ -7,11 +7,16 @@ import android.telecom.VideoProfile
 
 class CallActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val call = ActiveCall.current ?: return
+        PhoneErrorLog.add(context, "CALL_ACTION", "action=" + intent.action)
+        val call = ActiveCall.current ?: run {
+            PhoneErrorLog.add(context, "CALL_ACTION", "No active call found")
+            return
+        }
         when (intent.action) {
             ACTION_ANSWER -> {
                 if (call.state == android.telecom.Call.STATE_RINGING) {
-                    call.answer(VideoProfile.STATE_AUDIO_ONLY)
+                    runCatching { call.answer(VideoProfile.STATE_AUDIO_ONLY) }
+                        .onFailure { PhoneErrorLog.exception(context, "ANSWER_CALL_FAILED", it) }
                 }
                 PhoneInCallService.dismissIncomingNotification(context)
                 val activity = Intent(context, IncomingCallActivity::class.java).apply {
@@ -21,7 +26,8 @@ class CallActionReceiver : BroadcastReceiver() {
             }
             ACTION_REJECT -> {
                 if (call.state == android.telecom.Call.STATE_RINGING) {
-                    call.reject(false, null)
+                    runCatching { call.reject(false, null) }
+                        .onFailure { PhoneErrorLog.exception(context, "REJECT_CALL_FAILED", it) }
                 }
                 PhoneInCallService.dismissIncomingNotification(context)
             }
