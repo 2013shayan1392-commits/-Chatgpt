@@ -192,12 +192,16 @@ private fun readSnapshot(context: Context, cpuLoad: Int?): Snapshot {
     )
 }
 
-private fun readCpuTicks(): CpuTicks? = try {
-    val line = File("/proc/stat").bufferedReader().use { it.readLine() } ?: return null
-    val values = line.trim().split(Regex("\\s+")).drop(1).map { it.toLong() }
-    if (values.size < 4) return null
-    CpuTicks(values.sum(), values[3] + (values.getOrNull(4) ?: 0L))
-} catch (_: Exception) { null }
+private fun readCpuTicks(): CpuTicks? {
+    return try {
+        val line = File("/proc/stat").bufferedReader().use { it.readLine() } ?: return null
+        val values = line.trim().split(Regex("\\s+")).drop(1).map { it.toLong() }
+        if (values.size < 4) return null
+        CpuTicks(values.sum(), values[3] + (values.getOrNull(4) ?: 0L))
+    } catch (_: Exception) {
+        null
+    }
+}
 
 private fun cpuPercent(old: CpuTicks, now: CpuTicks): Int? {
     val total = now.total - old.total
