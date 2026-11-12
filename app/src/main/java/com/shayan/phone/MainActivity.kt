@@ -12,6 +12,7 @@ import android.provider.CallLog
 import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
+import android.telecom.TelecomManager
 import android.telecom.VideoProfile
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -20,6 +21,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -47,16 +50,23 @@ class MainActivity : ComponentActivity() {
     private var diagnosticState = mutableStateOf<String?>(null)
     private val roleLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         refreshDefaultDialer()
+        PhoneErrorLog.add(this, "ROLE_RESULT", "resultCode=" + result.resultCode + "; held=" + defaultDialerState.value)
         if (result.resultCode == RESULT_OK && defaultDialerState.value) {
             Toast.makeText(this, "Shayan Phone به‌عنوان تلفن پیش‌فرض انتخاب شد", Toast.LENGTH_LONG).show()
         } else {
-            diagnosticState.value = "انتخاب نقش انجام نشد.\n\n${dialerEligibilityReport()}\n\nاین گزارش را کامل برای بررسی ارسال کن."
+            val report = dialerEligibilityReport()
+            PhoneErrorLog.add(this, "ROLE_REJECTED", report)
+            diagnosticState.value = "انتخاب نقش انجام نشد.\\n\\n" + report + "\\n\\nگزارش در تنظیمات ذخیره شد."
         }
     }
-    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        PhoneErrorLog.add(this, "PERMISSION_RESULT", result.entries.joinToString { it.key.substringAfterLast('.') + "=" + it.value })
+    }
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PhoneErrorLog.install(applicationContext)
+        PhoneErrorLog.add(this, "APP_START", "MainActivity created; version 2.3.0")
         refreshDefaultDialer()
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -103,9 +113,11 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "برنامه تلفن پیش‌فرض است", Toast.LENGTH_LONG).show()
             return
         }
+        PhoneErrorLog.add(this, "ROLE_REQUEST", "available=true; held=false; sdk=" + Build.VERSION.SDK_INT)
         runCatching {
             roleLauncher.launch(rm.createRequestRoleIntent(RoleManager.ROLE_DIALER))
         }.onFailure {
+            PhoneErrorLog.exception(this, "ROLE_REQUEST_FAILED", it)
             Toast.makeText(this, "خطا در درخواست نقش تلفن: ${it.javaClass.simpleName}", Toast.LENGTH_LONG).show()
         }
     }
@@ -129,7 +141,11 @@ class MainActivity : ComponentActivity() {
         val carModeUi = service?.metaData?.getBoolean("android.telecom.IN_CALL_SERVICE_CAR_MODE_UI", false) == true
         val roleAvailable = getSystemService(RoleManager::class.java)
             ?.isRoleAvailable(RoleManager.ROLE_DIALER) == true
-        return "DIAL=$dial\ntel=$tel\nService=$serviceFound\nPermission=$permissionOk\nExported=$exportedOk\nEnabled=$enabledOk\nUI=$inCallUi\nCarUI=$carModeUi\nRoleAvailable=$roleAvailable\nPackage=$packageName"
+        val callPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        val readPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        val answerCalls = ContextCompat.checkSelfPermission(this, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED
+        val readLog = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+        return "DIAL=$dial\ntel=$tel\nService=$serviceFound\nPermission=$permissionOk\nExported=$exportedOk\nEnabled=$enabledOk\nUI=$inCallUi\nCarUI=$carModeUi\nRoleAvailable=$roleAvailable\nCALL_PHONE=$callPhone\nREAD_PHONE_STATE=$readPhone\nANSWER_PHONE_CALLS=$answerCalls\nREAD_CALL_LOG=$readLog\nServiceName=" + service?.name + "\nTargetSdk=" + applicationInfo.targetSdkVersion + "\nSDK=" + Build.VERSION.SDK_INT + "\nPackage=$packageName"
     }
 }
 
@@ -179,6 +195,8 @@ fun PhoneApp(
     var search by remember { mutableStateOf("") }
     var contacts by remember { mutableStateOf(emptyList<Person>()) }
     var recents by remember { mutableStateOf(emptyList<Recent>()) }
+    var showDiagnostics by remember { mutableStateOf(false) }
+    var logSnapshot by remember { mutableStateOf("") }
     val activeCall = ActiveCall.current
     LaunchedEffect(tab) {
         if (tab == 1 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) contacts = loadContacts(context)
@@ -189,8 +207,10 @@ fun PhoneApp(
         topBar = {
             TopAppBarPhone(
                 isDefault = isDefaultDialer,
-                onDefault = {
-                    onDefault()
+                onDefault = { onDefault() },
+                onLogs = {
+                    logSnapshot = PhoneErrorLog.read(context)
+                    showDiagnostics = true
                 }
             )
         },
@@ -208,7 +228,15 @@ fun PhoneApp(
                 0 -> DialerScreen(number, { number = it }, {
                     if (number.isBlank()) return@DialerScreen
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                        context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number))))
+                        runCatching {
+                            val telecom = context.getSystemService(TelecomManager::class.java)
+                                ?: error("TelecomManager unavailable")
+                            telecom.placeCall(Uri.fromParts("tel", number, null), Bundle())
+                            PhoneErrorLog.add(context, "OUTGOING_CALL", "TelecomManager.placeCall invoked")
+                        }.onFailure {
+                            PhoneErrorLog.exception(context, "OUTGOING_CALL_FAILED", it)
+                            Toast.makeText(context, "برقراری تماس ناموفق بود: " + it.javaClass.simpleName, Toast.LENGTH_LONG).show()
+                        }
                     } else onCallPermission()
                 })
                 1 -> ContactsScreen(search, { search = it }, contacts) { number = it; tab = 0 }
@@ -216,14 +244,40 @@ fun PhoneApp(
             }
         }
     }
+    if (showDiagnostics) {
+        AlertDialog(
+            onDismissRequest = { showDiagnostics = false },
+            title = { Text("گزارش خطا و سازگاری") },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text(logSnapshot, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showDiagnostics = false }) { Text("بستن") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        PhoneErrorLog.clear(context)
+                        logSnapshot = "گزارش‌ها پاک شدند."
+                    }) { Text("پاک‌کردن") }
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Shayan Phone diagnostics", logSnapshot))
+                        Toast.makeText(context, "گزارش کپی شد", Toast.LENGTH_SHORT).show()
+                    }) { Text("کپی گزارش") }
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
+fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit, onLogs: () -> Unit) {
     TopAppBar(
         title = { Column { Text("تلفن", fontWeight = FontWeight.Bold); Text("SHAYAN PHONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) } },
         actions = {
+            IconButton(onClick = onLogs) { Icon(Icons.Default.BugReport, contentDescription = "گزارش خطا") }
             TextButton(onClick = onDefault) {
                 Icon(if (isDefault) Icons.Default.Verified else Icons.Default.Settings, null)
                 Spacer(Modifier.width(5.dp))
@@ -387,7 +441,7 @@ fun loadContacts(ctx: Context): List<Person> {
             null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE LOCALIZED ASC")?.use { c ->
             while (c.moveToNext()) out.add(Person(c.getString(0) ?: "", c.getString(1) ?: ""))
         }
-    }
+    }.onFailure { PhoneErrorLog.exception(ctx, "CONTACTS_LOAD", it) }
     return out.distinctBy { it.number }
 }
 fun loadRecents(ctx: Context): List<Recent> {
@@ -398,6 +452,6 @@ fun loadRecents(ctx: Context): List<Recent> {
             null, null, CallLog.Calls.DATE + " DESC")?.use { c ->
             while (c.moveToNext()) out.add(Recent(c.getString(0) ?: "ناشناس", c.getString(1) ?: "", c.getInt(2)))
         }
-    }
+    }.onFailure { PhoneErrorLog.exception(ctx, "CALL_HISTORY_LOAD", it) }
     return out
 }
