@@ -356,7 +356,7 @@ fun DialerScreen(
     val dialerPanelColor = if (dialerDarkTheme) androidx.compose.ui.graphics.Color(0xFF303030) else androidx.compose.ui.graphics.Color(0xFFF1F2F5)
     val dialerPrimaryText = if (dialerDarkTheme) androidx.compose.ui.graphics.Color(0xFFF2F0F3) else androidx.compose.ui.graphics.Color(0xFF202127)
     val dialerSecondaryText = if (dialerDarkTheme) androidx.compose.ui.graphics.Color(0xFFAAA7AE) else androidx.compose.ui.graphics.Color(0xFF656873)
-    var sheetHeightFraction by remember { mutableFloatStateOf(0.61f) }
+    var sheetExpanded by remember { mutableStateOf(true) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
     val queryDigits = normalizePhone(number)
     val matching = if (number.isBlank()) emptyList() else contacts.filter { person ->
@@ -364,14 +364,11 @@ fun DialerScreen(
         (queryDigits.isNotEmpty() && contactDigits.contains(queryDigits)) ||
             person.name.contains(number.trim(), ignoreCase = true)
     }.distinctBy { it.contactId to normalizePhone(it.number) }.take(30)
-    // Expand the sheet slightly while entering a number so the keypad and call button keep their full size.
-    val targetSheetHeight = (sheetHeightFraction + if (number.isNotBlank()) 0.09f else 0f).coerceAtMost(0.88f)
-    val displayedSheetHeight by animateFloatAsState(targetValue = targetSheetHeight, label = "dialer-sheet-height")
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // Recent calls remain visible behind the bottom dialer panel.
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)
-                .padding(bottom = maxHeight * displayedSheetHeight + 8.dp)
+                .padding(bottom = if (sheetExpanded) maxHeight * 0.80f else 88.dp)
         ) {
             if (number.isBlank()) {
                 items(recents.take(50)) { c ->
@@ -380,11 +377,11 @@ fun DialerScreen(
                         supportingContent = { Text(c.number) },
                         leadingContent = { Icon(Icons.Default.Info, null) },
                         trailingContent = {
-                            IconButton(onClick = { onNumber(c.number) }) {
+                            IconButton(onClick = { onNumber(c.number); sheetExpanded = true }) {
                                 Icon(Icons.Default.Call, "شماره‌گیری")
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().clickable { onNumber(c.number) },
+                        modifier = Modifier.fillMaxWidth().clickable { onNumber(c.number); sheetExpanded = true },
                         colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
@@ -396,127 +393,128 @@ fun DialerScreen(
                         supportingContent = { Text(person.number) },
                         leadingContent = { Icon(Icons.Default.AccountCircle, null) },
                         trailingContent = {
-                            IconButton(onClick = { onNumber(person.number) }) {
+                            IconButton(onClick = { onNumber(person.number); sheetExpanded = true }) {
                                 Icon(Icons.Default.Call, "استفاده از شماره")
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().clickable { onNumber(person.number) },
+                        modifier = Modifier.fillMaxWidth().clickable { onNumber(person.number); sheetExpanded = true },
                         colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                 }
             } else {
                 item {
-                    Text(
-                        "مخاطبی با این شماره پیدا نشد",
+                    Text("مخاطبی با این شماره پیدا نشد",
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        color = dialerSecondaryText,
-                        textAlign = TextAlign.Center
-                    )
+                        color = dialerSecondaryText, textAlign = TextAlign.Center)
                 }
             }
         }
-        Column(
-            Modifier.align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .fillMaxHeight(displayedSheetHeight)
-                .background(dialerPanelColor,
-                    RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .padding(horizontal = 22.dp)
+
+        androidx.compose.animation.AnimatedVisibility(
+            visible = sheetExpanded,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = androidx.compose.animation.slideInVertically(initialOffsetY = { it }) +
+                androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically(targetOffsetY = { it }) +
+                androidx.compose.animation.fadeOut()
         ) {
-            Box(
-                Modifier.fillMaxWidth().height(30.dp)
-                    .pointerInput(Unit) {
+            Column(
+                Modifier.fillMaxWidth().fillMaxHeight(0.80f)
+                    .background(dialerPanelColor, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .padding(horizontal = 22.dp)
+            ) {
+                Box(
+                    Modifier.fillMaxWidth().height(30.dp).pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onVerticalDrag = { _, amount -> dragTotal += amount },
                             onDragEnd = {
-                                sheetHeightFraction = if (dragTotal < -35f) 0.78f else if (dragTotal > 35f) 0.52f else sheetHeightFraction
+                                if (dragTotal > 35f) sheetExpanded = false
                                 dragTotal = 0f
-                            }
+                            },
+                            onDragCancel = { dragTotal = 0f }
                         )
                     },
-                contentAlignment = Alignment.Center
-            ) {
-                Box(Modifier.width(42.dp).height(5.dp)
-                    .background(dialerSecondaryText.copy(alpha = 0.65f), RoundedCornerShape(8.dp)))
-            }
-            if (number.isNotBlank()) {
-                Row(
-                    Modifier.fillMaxWidth().height(42.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    contentAlignment = Alignment.Center
                 ) {
-                    IconButton(onClick = { onNumber(number.dropLast(1)) }) {
-                        Icon(Icons.Default.Backspace, "حذف رقم", tint = dialerSecondaryText)
-                    }
-                    Text(number, color = dialerPrimaryText,
-                        style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.End)
+                    Box(Modifier.width(42.dp).height(5.dp)
+                        .background(dialerSecondaryText.copy(alpha = 0.65f), RoundedCornerShape(8.dp)))
                 }
-            } else {
-                Spacer(Modifier.height(8.dp))
-            }
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                val keys = listOf(
-                    "1" to "", "2" to "ABC", "3" to "DEF",
-                    "4" to "GHI", "5" to "JKL", "6" to "MNO",
-                    "7" to "PQRS", "8" to "TUV", "9" to "WXYZ",
-                    "*" to "(P)", "0" to "+", "#" to "(W)"
-                )
-                Column(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    keys.chunked(3).forEach { row ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            row.forEach { (key, letters) ->
-                                Column(
-                                    Modifier.weight(1f).height(62.dp).clickable { onNumber(number + key) },
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Text(key, color = dialerPrimaryText,
-                                        style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Normal)
-                                    if (letters.isNotEmpty()) Text(letters,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.labelMedium)
+                if (number.isNotBlank()) {
+                    Row(Modifier.fillMaxWidth().height(42.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        IconButton(onClick = { onNumber(number.dropLast(1)) }) {
+                            Icon(Icons.Default.Backspace, "حذف رقم", tint = dialerSecondaryText)
+                        }
+                        Text(number, color = dialerPrimaryText,
+                            style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.End)
+                    }
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                }
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    val keys = listOf(
+                        "1" to "", "2" to "ABC", "3" to "DEF",
+                        "4" to "GHI", "5" to "JKL", "6" to "MNO",
+                        "7" to "PQRS", "8" to "TUV", "9" to "WXYZ",
+                        "*" to "(P)", "0" to "+", "#" to "(W)"
+                    )
+                    Column(Modifier.weight(1f).fillMaxWidth(),
+                        verticalArrangement = Arrangement.SpaceEvenly) {
+                        keys.chunked(3).forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                row.forEach { (key, letters) ->
+                                    Column(Modifier.weight(1f).height(62.dp).clickable { onNumber(number + key) },
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center) {
+                                        Text(key, color = dialerPrimaryText,
+                                            style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Normal)
+                                        if (letters.isNotEmpty()) Text(letters, color = dialerSecondaryText,
+                                            style = MaterialTheme.typography.labelMedium)
+                                    }
                                 }
                             }
                         }
-                    }
-                    Row(Modifier.fillMaxWidth().height(78.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            IconButton(onClick = { onNumber(number.dropLast(1)) }) {
-                                Icon(Icons.Default.Backspace, "حذف رقم",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(27.dp))
+                        Row(Modifier.fillMaxWidth().height(78.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                IconButton(onClick = { onNumber(number.dropLast(1)) }) {
+                                    Icon(Icons.Default.Backspace, "حذف رقم", tint = dialerSecondaryText,
+                                        modifier = Modifier.size(27.dp))
+                                }
                             }
-                        }
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            FilledIconButton(
-                                onClick = onCall,
-                                modifier = Modifier.size(76.dp),
-                                shape = CircleShape,
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = androidx.compose.ui.graphics.Color(0xFF55AD55)
-                                )
-                            ) {
-                                Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(31.dp))
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                FilledIconButton(onClick = onCall, modifier = Modifier.size(76.dp),
+                                    shape = CircleShape,
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = androidx.compose.ui.graphics.Color(0xFF55AD55))) {
+                                    Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(31.dp))
+                                }
                             }
-                        }
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            IconButton(onClick = { sheetHeightFraction = if (sheetHeightFraction < 0.7f) 0.78f else 0.61f }) {
-                                Icon(Icons.Default.Dialpad, "تغییر اندازه شماره‌گیر",
-                                    tint = dialerPrimaryText,
-                                    modifier = Modifier.size(27.dp))
-                            }
+                            Spacer(Modifier.weight(1f))
                         }
                     }
                 }
+                FloatingPhoneNavigationBar(selectedTab = 0, onSelect = onSelectTab)
             }
+        }
+
+        if (!sheetExpanded) {
             FloatingPhoneNavigationBar(
                 selectedTab = 0,
-                onSelect = onSelectTab
+                onSelect = onSelectTab,
             )
+            FilledIconButton(
+                onClick = { sheetExpanded = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 94.dp).size(62.dp),
+                shape = CircleShape,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = androidx.compose.ui.graphics.Color(0xFF55AD55),
+                    contentColor = androidx.compose.ui.graphics.Color.White
+                )
+            ) {
+                Icon(Icons.Default.Dialpad, "باز کردن شماره‌گیر", modifier = Modifier.size(29.dp))
+            }
         }
     }
 }
