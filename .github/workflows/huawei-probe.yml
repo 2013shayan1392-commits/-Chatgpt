@@ -1,7 +1,7 @@
 name: Huawei Recorder Probe APK
 on:
   push:
-    branches: [ huawei-recorder-probe, huawei-callui-observer ]
+    branches: [ huawei-recorder-probe, huawei-callui-observer, huawei-audio-route-test ]
     paths:
       - 'HuaweiRecorderProbe/**'
       - '.github/workflows/huawei-probe.yml'
