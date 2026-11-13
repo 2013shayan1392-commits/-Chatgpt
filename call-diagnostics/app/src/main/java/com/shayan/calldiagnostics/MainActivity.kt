@@ -14,9 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.telephony.TelephonyManager
 import android.view.Gravity
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -47,7 +45,7 @@ class MainActivity : Activity() {
         }
         root.addView(title, LinearLayout.LayoutParams(-1, -2))
         val subtitle = TextView(this).apply {
-            text = "Android 16 · HyperOS 3 · گزارش فنی دستگاه"
+            text = "گزارش فنی وضعیت دستگاه و مجوزها"
             textSize = 13f
             setTextColor(0xFFB8C3D1.toInt())
             gravity = Gravity.CENTER
@@ -64,7 +62,7 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(0xFFE7EDF5.toInt())
             setPadding(12, 16, 12, 24)
-            textIsSelectable = true
+            setTextIsSelectable(true)
         }
         val scroll = ScrollView(this)
         scroll.addView(reportView)
@@ -88,7 +86,10 @@ class MainActivity : Activity() {
         else Toast.makeText(this, "مجوزهای قابل‌درخواست قبلاً داده شده‌اند", Toast.LENGTH_SHORT).show()
     }
 
-    override fun onResume() { super.onResume(); if (::reportView.isInitialized) refreshReport() }
+    override fun onResume() {
+        super.onResume()
+        if (::reportView.isInitialized) refreshReport()
+    }
 
     private fun refreshReport() {
         val lines = mutableListOf<String>()
@@ -101,7 +102,7 @@ class MainActivity : Activity() {
         add("Product", Build.PRODUCT)
         add("Device", Build.DEVICE)
         add("Package", packageName)
-        add("میکروفون", granted(Manifest.permission.RECORD_AUDIO))
+        add("RECORD_AUDIO", granted(Manifest.permission.RECORD_AUDIO))
         add("READ_PHONE_STATE", granted(Manifest.permission.READ_PHONE_STATE))
         add("READ_CALL_LOG", granted(Manifest.permission.READ_CALL_LOG))
         if (Build.VERSION.SDK_INT >= 33) add("POST_NOTIFICATIONS", granted(Manifest.permission.POST_NOTIFICATIONS))
@@ -110,12 +111,13 @@ class MainActivity : Activity() {
         add("Notification listener فعال", isNotificationListenerEnabled())
         add("نقش Dialer قابل‌دسترسی", roleAvailable())
         add("نقش Dialer فعلی برنامه", isDefaultDialer())
-        add("AudioRecord منبع MIC", probeSource(MediaRecorder.AudioSource.MIC))
-        add("AudioRecord منبع VOICE_RECOGNITION", probeSource(MediaRecorder.AudioSource.VOICE_RECOGNITION))
-        add("AudioRecord منبع VOICE_COMMUNICATION", probeSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION))
-        add("AudioRecord منبع VOICE_CALL", probeSource(MediaRecorder.AudioSource.VOICE_CALL))
-        add("توضیح VOICE_CALL", "این بررسی فقط حداقل بافر را می‌خواند؛ ضبط واقعی تماس انجام نمی‌دهد.")
-        add("CAPTURE_AUDIO_OUTPUT در manifest برنامه", "درخواست نشده؛ مجوز سیستمی و غیرقابل‌اعطا به اپ عادی")
+        add("AudioRecord منبع MIC", buffer(MediaRecorder.AudioSource.MIC))
+        add("AudioRecord منبع VOICE_RECOGNITION", buffer(MediaRecorder.AudioSource.VOICE_RECOGNITION))
+        add("AudioRecord منبع VOICE_COMMUNICATION", buffer(MediaRecorder.AudioSource.VOICE_COMMUNICATION))
+        add("AudioRecord منبع VOICE_CALL", buffer(MediaRecorder.AudioSource.VOICE_CALL))
+        add("CAPTURE_AUDIO_OUTPUT وضعیت دسترسی", granted("android.permission.CAPTURE_AUDIO_OUTPUT"))
+        add("CAPTURE_AUDIO_OUTPUT در manifest برنامه", "عمداً درخواست نشده؛ مجوز privileged/signature است و اپ عادی نمی‌تواند آن را با Restricted Settings بگیرد.")
+        add("توضیح تست صوت", "فقط حداقل بافر AudioRecord بررسی می‌شود؛ startRecording/read اجرا نمی‌شود و تماس ضبط نمی‌شود.")
         add("نتیجه", "این گزارش وضعیت مجوزها و امکان اولیه AudioRecord را نشان می‌دهد؛ اثبات ضبط دوطرفه نیست.")
         report = lines.joinToString("\n")
         if (::reportView.isInitialized) reportView.text = report
@@ -127,8 +129,10 @@ class MainActivity : Activity() {
     private fun buffer(source: Int): String = try {
         val rate = 44100
         val size = AudioRecord.getMinBufferSize(rate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT)
-        if (size > 0) "قابل‌محاسبه ($size bytes؛ منبع در این مرحله باز نشده)" else "نامعتبر/پشتیبانی‌نشده ($size)"
-    } catch (e: Exception) { "خطا: ${e.javaClass.simpleName}: ${e.message}" }
+        if (size > 0) "قابل‌محاسبه ($size bytes؛ فقط بررسی بافر، بدون ضبط)" else "نامعتبر/پشتیبانی‌نشده ($size)"
+    } catch (e: Exception) {
+        "خطا: ${e.javaClass.simpleName}: ${e.message}"
+    }
 
     private fun isAccessibilityEnabled(): Boolean = try {
         Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1 &&
