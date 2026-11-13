@@ -125,7 +125,7 @@ class MainActivity : Activity() {
         log("توجه: فهرست بسته‌ها ممکن است تحت محدودیت مشاهدهٔ بسته‌ها در اندروید 11 به بعد کامل نباشد.")
 
         log("مقایسهٔ UID و وضعیت مجوز بسته‌های مرتبط…")
-        val relatedPackages = listOf(servicePackage, "com.android.incallui", "com.android.phone", packageName).distinct()
+        val relatedPackages = listOf(servicePackage, "com.android.incallui", "com.android.phone", "com.android.huawei.smartkey", packageName).distinct()
         val thisUid = applicationInfo.uid
         log("اپ آزمایشی: $packageName؛ UID=$thisUid؛ مجوز=" + if (checkSelfPermission(requiredPermission) == PackageManager.PERMISSION_GRANTED) "اعطا شده" else "اعطا نشده")
         relatedPackages.forEach { relatedName ->
