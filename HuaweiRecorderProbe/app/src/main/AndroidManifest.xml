@@ -3,6 +3,9 @@
     <uses-permission android:name="com.huawei.smartkey.permission.VOICE_RECORDER" />
     <queries>
         <package android:name="com.huawei.phone.recorder" />
+        <package android:name="com.android.incallui" />
+        <package android:name="com.android.phone" />
+        <package android:name="com.shayan.huaweiprobe" />
         <intent>
             <action android:name="com.android.phone.action.voiceRecoderService" />
         </intent>
