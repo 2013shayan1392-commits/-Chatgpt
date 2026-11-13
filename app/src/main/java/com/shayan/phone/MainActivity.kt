@@ -198,8 +198,14 @@ fun PhoneApp(
     var recents by remember { mutableStateOf(emptyList<Recent>()) }
     var pendingCallNumber by remember { mutableStateOf<String?>(null) }
     var editingContact by remember { mutableStateOf<Person?>(null) }
+    var pendingEditContact by remember { mutableStateOf<Person?>(null) }
     val activeCall = ActiveCall.current
     LaunchedEffect(permissionRefresh) {
+        val editPending = pendingEditContact
+        if (editPending != null && ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+            pendingEditContact = null
+            editingContact = loadContacts(context).firstOrNull { it.dataId == editPending.dataId } ?: editPending
+        }
         val pending = pendingCallNumber
         if (pending != null && ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
             pendingCallNumber = null
@@ -243,8 +249,8 @@ fun PhoneApp(
                             pendingCallNumber = number
                             onCallPermission()
                         }
-                    }, onEditContact = { id -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = contacts.firstOrNull { it.contactId == id } else onContactsPermission() })
-                    1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { person -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = person else onContactsPermission() })
+                    }, onEditContact = { id -> val person = contacts.firstOrNull { it.contactId == id }; if (person != null && ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = person else if (person != null) { pendingEditContact = person; onContactsPermission() } })
+                    1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { person -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = person else { pendingEditContact = person; onContactsPermission() } })
                     else -> HistoryScreen(recents) { number = it; tab = 0 }
                 }
             }
