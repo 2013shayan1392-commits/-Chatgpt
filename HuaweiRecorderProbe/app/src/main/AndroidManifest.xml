@@ -5,6 +5,7 @@
         <package android:name="com.huawei.phone.recorder" />
         <package android:name="com.android.incallui" />
         <package android:name="com.android.phone" />
+        <package android:name="com.android.huawei.smartkey" />
         <package android:name="com.shayan.huaweiprobe" />
         <intent>
             <action android:name="com.android.phone.action.voiceRecoderService" />
