@@ -86,7 +86,15 @@ class MainActivity : Activity() {
         }
 
         log("مجوز توسط بستهٔ زیر تعریف شده: ${permissionInfo.packageName}")
-        log("Protection level: ${android.content.pm.PermissionInfo.protectionToString(permissionInfo.protectionLevel)}")
+        val protectionBase = permissionInfo.protectionLevel and 0xF
+        val protectionName = when (protectionBase) {
+            0 -> "normal"
+            1 -> "dangerous"
+            2 -> "signature"
+            3 -> "signatureOrSystem (legacy)"
+            else -> "unknown"
+        }
+        log("Protection level: $protectionName")
         log("Protection level عددی: 0x${permissionInfo.protectionLevel.toString(16)}")
         log("Permission group: ${permissionInfo.group ?: "ندارد"}")
 
@@ -102,8 +110,9 @@ class MainActivity : Activity() {
             val index = requested.indexOf(requiredPermission)
             if (index < 0) return@mapNotNull null
             val flags = pkg.requestedPermissionsFlags
-            val granted = flags != null && index < flags.size &&
-                (flags[index] and android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+            val granted = flags?.getOrNull(index)?.let {
+                (it and android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+            } ?: false
             "${pkg.packageName} (granted=$granted)"
         }
 
@@ -131,12 +140,13 @@ class MainActivity : Activity() {
         relatedPackages.forEach { relatedName ->
             try {
                 val related = packageManager.getPackageInfo(relatedName, PackageManager.GET_PERMISSIONS)
-                val uid = related.applicationInfo.uid
+                val uid = related.applicationInfo?.uid ?: -1
                 val requestIndex = related.requestedPermissions?.indexOf(requiredPermission) ?: -1
                 val requested = requestIndex >= 0
-                val requestedGranted = requested && related.requestedPermissionsFlags != null &&
-                    requestIndex < related.requestedPermissionsFlags.size &&
-                    (related.requestedPermissionsFlags[requestIndex] and android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+                val relatedFlags = related.requestedPermissionsFlags
+                val requestedGranted = requested && relatedFlags?.getOrNull(requestIndex)?.let {
+                    (it and android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+                } == true
                 val uidPermissionGranted = packageManager.checkPermission(requiredPermission, relatedName) == PackageManager.PERMISSION_GRANTED
                 @Suppress("DEPRECATION")
                 val sharedUid = related.sharedUserId ?: "ندارد"
