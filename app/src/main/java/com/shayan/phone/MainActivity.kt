@@ -362,7 +362,6 @@ fun normalizePhone(value: String): String {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopAppBarPhone() {
     TopAppBar(
