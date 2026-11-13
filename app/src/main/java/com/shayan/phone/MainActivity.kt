@@ -354,35 +354,66 @@ fun DialerScreen(
 ) {
     var sheetHeightFraction by remember { mutableFloatStateOf(0.61f) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
+    val queryDigits = normalizePhone(number)
     val matching = if (number.isBlank()) emptyList() else contacts.filter { p ->
-        normalizePhone(p.number).contains(normalizePhone(number)) || p.name.contains(number, ignoreCase = true)
+        (queryDigits.isNotEmpty() && normalizePhone(p.number).contains(queryDigits)) ||
+            p.name.contains(number, ignoreCase = true)
     }.take(30)
+    val targetSheetHeight = (sheetHeightFraction + if (number.isNotBlank()) 0.07f else 0f).coerceAtMost(0.90f)
+    val displayedSheetHeight by animateFloatAsState(targetValue = targetSheetHeight, label = "dialer-sheet-height")
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Recent calls remain visible behind the bottom dialer panel.
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)
-                .padding(bottom = maxHeight * 0.60f)
+                .padding(bottom = maxHeight * displayedSheetHeight + 8.dp)
         ) {
-            items(recents.take(50)) { c ->
-                ListItem(
-                    headlineContent = { Text(c.name, fontWeight = FontWeight.Medium) },
-                    supportingContent = { Text(c.number) },
-                    leadingContent = { Icon(Icons.Default.Info, null) },
-                    trailingContent = {
-                        IconButton(onClick = { onNumber(c.number) }) {
-                            Icon(Icons.Default.Call, "شماره‌گیری")
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().clickable { onNumber(c.number) },
-                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+            if (number.isBlank()) {
+                items(recents.take(50)) { c ->
+                    ListItem(
+                        headlineContent = { Text(c.name, fontWeight = FontWeight.Medium) },
+                        supportingContent = { Text(c.number) },
+                        leadingContent = { Icon(Icons.Default.Info, null) },
+                        trailingContent = {
+                            IconButton(onClick = { onNumber(c.number) }) {
+                                Icon(Icons.Default.Call, "شماره‌گیری")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().clickable { onNumber(c.number) },
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                }
+            } else if (matching.isNotEmpty()) {
+                items(matching) { person ->
+                    ListItem(
+                        headlineContent = { Text(person.name, fontWeight = FontWeight.Medium) },
+                        supportingContent = { Text(person.number) },
+                        leadingContent = { Icon(Icons.Default.AccountCircle, null) },
+                        trailingContent = {
+                            IconButton(onClick = { onNumber(person.number) }) {
+                                Icon(Icons.Default.Call, "استفاده از شماره")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().clickable { onNumber(person.number) },
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                }
+            } else {
+                item {
+                    Text(
+                        "مخاطبی با این شماره پیدا نشد",
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
         Column(
             Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(sheetHeightFraction)
+                .fillMaxHeight(displayedSheetHeight)
                 .background(androidx.compose.ui.graphics.Color(0xFF303030),
                     RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                 .padding(horizontal = 22.dp)
