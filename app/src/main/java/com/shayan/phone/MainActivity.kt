@@ -19,6 +19,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.height
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,7 +47,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
-data class Person(val name: String, val number: String)
+data class Person(val name: String, val number: String, val contactId: Long)
 data class Recent(val name: String, val number: String, val type: Int)
 
 class MainActivity : ComponentActivity() {
@@ -53,7 +61,10 @@ class MainActivity : ComponentActivity() {
             diagnosticState.value = "انتخاب نقش انجام نشد.\n\n${dialerEligibilityReport()}\n\nاین گزارش را کامل برای بررسی ارسال کن."
         }
     }
-    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        if (results.values.any { it }) permissionRefresh.value++
+    }
+    private val permissionRefresh = mutableIntStateOf(0)
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,7 +80,8 @@ class MainActivity : ComponentActivity() {
                     onDefault = { requestDialerRole() },
                     onContactsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS)) },
                     onHistoryPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG)) },
-                    onCallPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE)) }
+                    onCallPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE)) },
+                    permissionRefresh = permissionRefresh.intValue
                 )
                 diagnosticState.value?.let { report ->
                     AlertDialog(
@@ -172,7 +184,8 @@ fun PhoneApp(
     onDefault: () -> Unit,
     onContactsPermission: () -> Unit,
     onHistoryPermission: () -> Unit,
-    onCallPermission: () -> Unit
+    onCallPermission: () -> Unit,
+    permissionRefresh: Int
 ) {
     var tab by remember { mutableIntStateOf(0) }
     var number by remember { mutableStateOf("") }
@@ -180,8 +193,8 @@ fun PhoneApp(
     var contacts by remember { mutableStateOf(emptyList<Person>()) }
     var recents by remember { mutableStateOf(emptyList<Recent>()) }
     val activeCall = ActiveCall.current
-    LaunchedEffect(tab) {
-        if (tab == 1 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) contacts = loadContacts(context)
+    LaunchedEffect(tab, permissionRefresh) {
+        if ((tab == 0 || tab == 1) && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) contacts = loadContacts(context)
         if (tab == 2 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) recents = loadRecents(context)
     }
     Scaffold(
@@ -195,23 +208,26 @@ fun PhoneApp(
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.Dialpad, null) }, label = { Text("شماره‌گیر") })
-                NavigationBarItem(selected = tab == 1, onClick = { tab = 1; if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) onContactsPermission() }, icon = { Icon(Icons.Default.Contacts, null) }, label = { Text("مخاطبین") })
-                NavigationBarItem(selected = tab == 2, onClick = { tab = 2; if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) onHistoryPermission() }, icon = { Icon(Icons.Default.History, null) }, label = { Text("تماس‌ها") })
-            }
+            FloatingPhoneNavigationBar(
+                selectedTab = tab,
+                onSelect = { selected ->
+                    tab = selected
+                    if (selected == 1 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) onContactsPermission()
+                    if (selected == 2 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) onHistoryPermission()
+                }
+            )
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             if (activeCall != null) InCallPanel(activeCall, onFinish = { ActiveCall.current = null })
             else when (tab) {
-                0 -> DialerScreen(number, { number = it }, {
+                0 -> DialerScreen(number, { number = it }, contacts, onCall = {
                     if (number.isBlank()) return@DialerScreen
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                         context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number))))
                     } else onCallPermission()
-                })
-                1 -> ContactsScreen(search, { search = it }, contacts) { number = it; tab = 0 }
+                }, onEditContact = { id -> openContactEditor(context, id) })
+                1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { id -> openContactEditor(context, id) })
                 else -> HistoryScreen(recents) { number = it; tab = 0 }
             }
         }
@@ -219,6 +235,65 @@ fun PhoneApp(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+
+@Composable
+fun FloatingPhoneNavigationBar(selectedTab: Int, onSelect: (Int) -> Unit) {
+    val items = listOf(
+        Triple(2, Icons.Default.History, "تماس‌ها"),
+        Triple(1, Icons.Default.Contacts, "مخاطبین"),
+        Triple(0, Icons.Default.Dialpad, "شماره‌گیر")
+    )
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(30.dp))
+            .padding(7.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        items.forEach { (tab, icon, label) ->
+            val selected = selectedTab == tab
+            val bg by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                label = "nav-pill"
+            )
+            val scale by animateFloatAsState(if (selected) 1.08f else 1f, label = "nav-icon-scale")
+            Column(
+                Modifier.weight(1f).background(bg, RoundedCornerShape(26.dp))
+                    .clickable { onSelect(tab) }.padding(vertical = 9.dp)
+                    .animateContentSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(icon, null, modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale })
+                Spacer(Modifier.height(3.dp))
+                Text(label, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+fun openContactEditor(context: Context, contactId: Long) {
+    val uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contactId.toString())
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_EDIT, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.onFailure {
+        Toast.makeText(context, "امکان باز کردن ویرایشگر مخاطب وجود ندارد", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun normalizePhone(value: String): String {
+    val digits = value.map { ch ->
+        when (ch) {
+            in '۰'..'۹' -> ('0'.code + (ch.code - '۰'.code)).toChar()
+            in '٠'..'٩' -> ('0'.code + (ch.code - '٠'.code)).toChar()
+            else -> ch
+        }
+    }.filter { it.isDigit() }
+    return when {
+        digits.startsWith("0098") -> "0" + digits.drop(4)
+        digits.startsWith("98") && digits.length >= 12 -> "0" + digits.drop(2)
+        else -> digits
+    }
+}
+
 @Composable
 fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
     TopAppBar(
@@ -234,13 +309,26 @@ fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
 }
 
 @Composable
-fun DialerScreen(number: String, onNumber: (String) -> Unit, onCall: () -> Unit) {
+fun DialerScreen(number: String, onNumber: (String) -> Unit, contacts: List<Person>, onCall: () -> Unit, onEditContact: (Long) -> Unit) {
+    var expanded by remember { mutableStateOf(true) }
+    var dragTotal by remember { mutableFloatStateOf(0f) }
     Column(
         Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text("شماره‌گیری", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+        Box(Modifier.fillMaxWidth().pointerInput(expanded) {
+            detectVerticalDragGestures(onVerticalDrag = { _, amount -> dragTotal += amount }, onDragEnd = {
+                if (dragTotal < -35f) expanded = true
+                if (dragTotal > 35f) expanded = false
+                dragTotal = 0f
+            })
+        }, contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.width(34.dp).height(4.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp)))
+                Text(if (expanded) "شماره‌گیری" else "برای باز کردن شماره‌گیر به بالا بکشید", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+            }
+        }
         OutlinedTextField(
             value = number, onValueChange = onNumber, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp, max = 60.dp),
             placeholder = { Text("شماره تلفن") }, singleLine = true,
@@ -248,7 +336,14 @@ fun DialerScreen(number: String, onNumber: (String) -> Unit, onCall: () -> Unit)
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             trailingIcon = { IconButton(onClick = { onNumber(number.dropLast(1)) }) { Icon(Icons.Default.Backspace, null) } }
         )
+        val matching = if (number.isBlank()) emptyList() else contacts.filter { p -> normalizePhone(p.number).contains(normalizePhone(number)) || p.name.contains(number, ignoreCase = true) }.take(5)
+        matching.forEach { p ->
+            ListItem(headlineContent = { Text(p.name) }, supportingContent = { Text(p.number) },
+                trailingContent = { IconButton(onClick = { onEditContact(p.contactId) }) { Icon(Icons.Default.Edit, "ویرایش مخاطب") } },
+                modifier = Modifier.fillMaxWidth().clickable { onNumber(p.number) })
+        }
         val keys = listOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL", "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "*" to "", "0" to "+", "#" to "")
+        AnimatedVisibility(visible = expanded) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             keys.chunked(3).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -265,6 +360,7 @@ fun DialerScreen(number: String, onNumber: (String) -> Unit, onCall: () -> Unit)
                 }
             }
         }
+        }
         FilledIconButton(
             onClick = onCall,
             modifier = Modifier.size(60.dp),
@@ -277,7 +373,7 @@ fun DialerScreen(number: String, onNumber: (String) -> Unit, onCall: () -> Unit)
 }
 
 @Composable
-fun ContactsScreen(search: String, onSearch: (String) -> Unit, contacts: List<Person>, onCall: (String) -> Unit) {
+fun ContactsScreen(search: String, onSearch: (String) -> Unit, contacts: List<Person>, onCall: (String) -> Unit, onEdit: (Long) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("مخاطبین", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
@@ -287,7 +383,7 @@ fun ContactsScreen(search: String, onSearch: (String) -> Unit, contacts: List<Pe
                 ListItem(
                     headlineContent = { Text(p.name) }, supportingContent = { Text(p.number) },
                     leadingContent = { Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(34.dp)) },
-                    trailingContent = { IconButton(onClick = { onCall(p.number) }) { Icon(Icons.Default.Call, null) } },
+                    trailingContent = { Row { IconButton(onClick = { onEdit(p.contactId) }) { Icon(Icons.Default.Edit, "ویرایش") }; IconButton(onClick = { onCall(p.number) }) { Icon(Icons.Default.Call, null) } } },
                     modifier = Modifier.clickable { onCall(p.number) }
                 )
                 HorizontalDivider()
@@ -334,7 +430,10 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
             style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary
         )
         Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(92.dp), tint = MaterialTheme.colorScheme.primary)
-        Text(call.details.handle?.schemeSpecificPart ?: "شماره ناشناس", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        val phoneNumber = call.details.handle?.schemeSpecificPart.orEmpty()
+        val savedName = remember(phoneNumber) { lookupSavedContactName(context, phoneNumber) }
+        Text(savedName ?: phoneNumber.ifBlank { "شماره ناشناس" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (savedName != null && phoneNumber.isNotBlank()) Text(phoneNumber, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
         if (state == Call.STATE_RINGING) {
             Row(horizontalArrangement = Arrangement.spacedBy(30.dp)) {
                 FilledIconButton(onClick = { call.reject(false, null) }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.CallEnd, "رد تماس") }
@@ -379,13 +478,23 @@ fun CallControl(label: String, icon: androidx.compose.ui.graphics.vector.ImageVe
     }
 }
 
+fun lookupSavedContactName(ctx: Context, number: String): String? {
+    if (number.isBlank() || ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
+    return runCatching {
+        ctx.contentResolver.query(
+            Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number)),
+            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null
+        )?.use { c -> if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null }
+    }.getOrNull()
+}
+
 fun loadContacts(ctx: Context): List<Person> {
     val out = mutableListOf<Person>()
     runCatching {
         ctx.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER, ContactsContract.CommonDataKinds.Phone.CONTACT_ID),
             null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE LOCALIZED ASC")?.use { c ->
-            while (c.moveToNext()) out.add(Person(c.getString(0) ?: "", c.getString(1) ?: ""))
+            while (c.moveToNext()) out.add(Person(c.getString(0) ?: "", c.getString(1) ?: "", c.getLong(2)))
         }
     }
     return out.distinctBy { it.number }
