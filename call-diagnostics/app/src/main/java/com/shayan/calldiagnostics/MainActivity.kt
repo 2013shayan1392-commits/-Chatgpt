@@ -62,7 +62,6 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(0xFFE7EDF5.toInt())
             setPadding(12, 16, 12, 24)
-            setTextIsSelectable(true)
         }
         val scroll = ScrollView(this)
         scroll.addView(reportView)
@@ -126,14 +125,24 @@ class MainActivity : Activity() {
     private fun granted(permission: String): String =
         if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) "Granted" else "Denied"
 
-    private fun buffer(source: Int): String = try {
-        val rate = 44100
-        val size = AudioRecord.getMinBufferSize(rate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT)
-        if (size > 0) "قابل‌محاسبه ($size bytes؛ فقط بررسی بافر، بدون ضبط)" else "نامعتبر/پشتیبانی‌نشده ($size)"
-    } catch (e: Exception) {
-        "خطا: ${e.javaClass.simpleName}: ${e.message}"
+    private fun probeSource(source: Int): String {
+        return try {
+            val rate = 44100
+            val size = AudioRecord.getMinBufferSize(rate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT)
+            if (size <= 0) {
+                "حداقل بافر نامعتبر/پشتیبانی‌نشده ($size)"
+            } else {
+                val recorder = AudioRecord(source, rate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT, size * 2)
+                val state = recorder.state
+                recorder.release()
+                if (state == AudioRecord.STATE_INITIALIZED) "AudioRecord ساخته و مقداردهی شد؛ بدون شروع ضبط" else "ساخت AudioRecord ناموفق؛ state=$state"
+            }
+        } catch (e: SecurityException) {
+            "دسترسی رد شد: ${e.message}"
+        } catch (e: Exception) {
+            "خطا: ${e.javaClass.simpleName}: ${e.message}"
+        }
     }
-
     private fun isAccessibilityEnabled(): Boolean = try {
         Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1 &&
             Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)?.contains(packageName) == true
