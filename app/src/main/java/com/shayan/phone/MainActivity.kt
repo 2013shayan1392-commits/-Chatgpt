@@ -22,6 +22,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.height
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -223,15 +224,17 @@ fun PhoneApp(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             if (activeCall != null) InCallPanel(activeCall, onFinish = { ActiveCall.current = null })
-            else when (tab) {
-                0 -> DialerScreen(number, { number = it }, contacts, onCall = {
-                    if (number.isBlank()) return@DialerScreen
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                        context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number))))
-                    } else onCallPermission()
-                }, onEditContact = { id -> openContactEditor(context, id) })
-                1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { id -> openContactEditor(context, id) })
-                else -> HistoryScreen(recents) { number = it; tab = 0 }
+            else AnimatedContent(targetState = tab, label = "tab-content") { selectedTab ->
+                when (selectedTab) {
+                    0 -> DialerScreen(number, { number = it }, contacts, onCall = {
+                        if (number.isBlank()) return@DialerScreen
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                            context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number))))
+                        } else onCallPermission()
+                    }, onEditContact = { id -> openContactEditor(context, id) })
+                    1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { id -> openContactEditor(context, id) })
+                    else -> HistoryScreen(recents) { number = it; tab = 0 }
+                }
             }
         }
     }
