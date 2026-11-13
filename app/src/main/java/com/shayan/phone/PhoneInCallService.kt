@@ -14,7 +14,7 @@ import android.telecom.InCallService
 import androidx.compose.runtime.mutableStateOf
 
 class PhoneInCallService : InCallService() {
-    private var activeCallback: Call.Callback? = null
+    private val callCallbacks = mutableMapOf<Call, Call.Callback>()
 
     override fun onCreate() {
         super.onCreate()
@@ -25,6 +25,7 @@ class PhoneInCallService : InCallService() {
     override fun onCallAudioStateChanged(audioState: android.telecom.CallAudioState) {
         super.onCallAudioStateChanged(audioState)
         ActiveCall.muted.value = audioState.isMuted
+        ActiveCall.audioRoute.intValue = audioState.route
     }
 
     override fun onCallAdded(call: Call) {
@@ -40,7 +41,7 @@ class PhoneInCallService : InCallService() {
                 }
             }
         }
-        activeCallback = callback
+        callCallbacks[call] = callback
         call.registerCallback(callback)
 
         if (call.state == Call.STATE_RINGING) {
@@ -49,15 +50,21 @@ class PhoneInCallService : InCallService() {
     }
 
     override fun onCallRemoved(call: Call) {
-        activeCallback?.let { call.unregisterCallback(it) }
-        activeCallback = null
-        if (ActiveCall.current == call) ActiveCall.current = null
-        dismissIncomingNotification(this)
+        callCallbacks.remove(call)?.let { call.unregisterCallback(it) }
+        if (ActiveCall.current == call) ActiveCall.current = callCallbacks.keys.lastOrNull()
+        val nextRingingCall = callCallbacks.keys.firstOrNull { it.state == Call.STATE_RINGING }
+        if (nextRingingCall != null) showIncomingCallNotification(nextRingingCall)
+        else dismissIncomingNotification(this)
         super.onCallRemoved(call)
     }
 
     override fun onDestroy() {
-        if (ActiveCall.service === this) ActiveCall.service = null
+        callCallbacks.forEach { (call, callback) -> runCatching { call.unregisterCallback(callback) } }
+        callCallbacks.clear()
+        if (ActiveCall.service === this) {
+            ActiveCall.service = null
+            ActiveCall.current = null
+        }
         super.onDestroy()
     }
 
@@ -164,6 +171,7 @@ object ActiveCall {
         set(value) { state.value = value }
 
     val muted = mutableStateOf(false)
+    val audioRoute = mutableIntStateOf(CallAudioState.ROUTE_EARPIECE)
 
     fun setMuted(value: Boolean) {
         service?.setMuted(value)
