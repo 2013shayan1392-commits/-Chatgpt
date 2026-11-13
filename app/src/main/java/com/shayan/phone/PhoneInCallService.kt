@@ -10,7 +10,6 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.telecom.Call
-import android.telecom.CallAudioState
 import android.telecom.InCallService
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -173,7 +172,7 @@ object ActiveCall {
         set(value) { state.value = value }
 
     val muted = mutableStateOf(false)
-    val audioRoute = mutableIntStateOf(CallAudioState.ROUTE_EARPIECE)
+    val audioRoute = mutableIntStateOf(1)
 
     fun setMuted(value: Boolean) {
         service?.setMuted(value)
