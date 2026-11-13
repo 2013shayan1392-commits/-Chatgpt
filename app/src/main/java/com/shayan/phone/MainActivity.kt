@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.height
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -46,6 +47,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class Person(val name: String, val number: String, val contactId: Long)
 data class Recent(val name: String, val number: String, val type: Int)
@@ -431,7 +434,8 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
         )
         Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(92.dp), tint = MaterialTheme.colorScheme.primary)
         val phoneNumber = call.details.handle?.schemeSpecificPart.orEmpty()
-        val savedName = remember(phoneNumber) { lookupSavedContactName(context, phoneNumber) }
+        var savedName by remember(phoneNumber) { mutableStateOf<String?>(null) }
+        LaunchedEffect(phoneNumber) { savedName = withContext(Dispatchers.IO) { lookupSavedContactName(context, phoneNumber) } }
         Text(savedName ?: phoneNumber.ifBlank { "شماره ناشناس" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (savedName != null && phoneNumber.isNotBlank()) Text(phoneNumber, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
         if (state == Call.STATE_RINGING) {
@@ -497,7 +501,7 @@ fun loadContacts(ctx: Context): List<Person> {
             while (c.moveToNext()) out.add(Person(c.getString(0) ?: "", c.getString(1) ?: "", c.getLong(2)))
         }
     }
-    return out.distinctBy { it.number }
+    return out.distinctBy { it.contactId to normalizePhone(it.number) }
 }
 fun loadRecents(ctx: Context): List<Recent> {
     val out = mutableListOf<Recent>()
