@@ -19,3 +19,8 @@ The call lifecycle must remain independent from any future recording implementat
 A third-party default dialer does not automatically receive privileged access to the carrier call's audio stream. Support varies by Android version, device manufacturer, region, and system configuration. Therefore, a future update must detect actual capability at runtime and must not promise recording on every device.
 
 No hidden recording, automatic recording, or background microphone capture is part of this project.
+
+
+## Accessibility diagnostic test (2.4.0)
+
+The optional accessibility service is limited to window-state events from an explicit allowlist of phone UI packages. It records only the package name and event type in the app's local diagnostic log. It does not retrieve window content, text, contact details, phone numbers, audio, or call media. The user must enable it manually in Android Accessibility settings. This test is for compatibility diagnostics only and is not a call-audio recording mechanism.
