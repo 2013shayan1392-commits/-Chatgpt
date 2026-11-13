@@ -196,7 +196,15 @@ fun PhoneApp(
     var search by remember { mutableStateOf("") }
     var contacts by remember { mutableStateOf(emptyList<Person>()) }
     var recents by remember { mutableStateOf(emptyList<Recent>()) }
+    var pendingCallNumber by remember { mutableStateOf<String?>(null) }
     val activeCall = ActiveCall.current
+    LaunchedEffect(permissionRefresh) {
+        val pending = pendingCallNumber
+        if (pending != null && ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+            pendingCallNumber = null
+            context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(pending))))
+        }
+    }
     LaunchedEffect(tab, permissionRefresh) {
         if ((tab == 0 || tab == 1) && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) contacts = loadContacts(context)
         if (tab == 2 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) recents = loadRecents(context)
@@ -230,7 +238,10 @@ fun PhoneApp(
                         if (number.isBlank()) return@DialerScreen
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                             context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number))))
-                        } else onCallPermission()
+                        } else {
+                            pendingCallNumber = number
+                            onCallPermission()
+                        }
                     }, onEditContact = { id -> openContactEditor(context, id) })
                     1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { id -> openContactEditor(context, id) })
                     else -> HistoryScreen(recents) { number = it; tab = 0 }
