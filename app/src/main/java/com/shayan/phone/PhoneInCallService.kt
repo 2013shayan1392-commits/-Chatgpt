@@ -97,19 +97,14 @@ class PhoneInCallService : InCallService() {
     }
 
     /**
-     * When the user grants overlay access, open the normal incoming-call screen
-     * directly over the current app. The high-priority call notification remains
-     * as a fallback for devices that block background activity launches.
+     * While unlocked, show only the full-screen call activity.
+     * The notification is reserved for the lock screen.
      */
     private fun showIncomingCallUi(call: Call) {
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
         val isLocked = keyguard?.isKeyguardLocked ?: true
-        val overlayAllowed =
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
 
-        // While unlocked, show the in-app full-screen UI directly. Keep the
-        // full-screen call notification only as a fallback or for the lock screen.
-        if (!isLocked && overlayAllowed) {
+        if (!isLocked) {
             if (uiCall != call) {
                 uiCall = call
                 val intent = Intent(this, IncomingCallActivity::class.java).apply {
@@ -119,23 +114,14 @@ class PhoneInCallService : InCallService() {
                             Intent.FLAG_ACTIVITY_SINGLE_TOP
                     )
                 }
-                val launched = runCatching {
-                    startActivity(intent)
-                    true
-                }.getOrDefault(false)
-
-                if (launched) {
-                    dismissIncomingNotification(this)
-                    return
-                }
-            } else {
-                dismissIncomingNotification(this)
-                return
+                runCatching { startActivity(intent) }
             }
+            // Avoid a second heads-up notification over the incoming-call screen.
+            dismissIncomingNotification(this)
+            return
         }
 
-        // On the lock screen Android needs the full-screen notification intent.
-        // It is also the fallback when direct activity launch is unavailable.
+        // While locked, Android uses the full-screen notification to wake/show the call UI.
         if (uiCall != call) uiCall = call
         showIncomingCallNotification(call)
     }
