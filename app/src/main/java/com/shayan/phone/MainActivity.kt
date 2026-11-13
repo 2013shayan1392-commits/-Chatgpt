@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -81,7 +82,17 @@ class MainActivity : ComponentActivity() {
                     onContactsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS, Manifest.permission.READ_CALL_LOG, Manifest.permission.CALL_PHONE)) },
                     onHistoryPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG)) },
                     onCallPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE)) },
-                    onNotificationsPermission = { if (Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                    onNotificationsPermission = {
+                        if (Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            runCatching {
+                                startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
+                            }
+                        }
+                    },
                     onBatterySettings = { runCatching { startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } },
                     permissionRefresh = permissionRefresh.intValue
                 )
@@ -222,8 +233,10 @@ fun PhoneApp(
         topBar = {
             Column {
                 TopAppBarPhone()
-                val notificationGranted = Build.VERSION.SDK_INT < 33 ||
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                val notificationGranted =
+                    (Build.VERSION.SDK_INT < 33 ||
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
+                    NotificationManagerCompat.from(context).areNotificationsEnabled()
                 val contactsGranted =
                     ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED &&
