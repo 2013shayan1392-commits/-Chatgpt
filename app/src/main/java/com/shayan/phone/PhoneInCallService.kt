@@ -9,6 +9,7 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import android.provider.Settings
 import android.telecom.Call
 import android.telecom.InCallService
 import androidx.compose.runtime.mutableIntStateOf
@@ -16,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 
 class PhoneInCallService : InCallService() {
     private val callCallbacks = mutableMapOf<Call, Call.Callback>()
+    private var uiCall: Call? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -36,7 +38,7 @@ class PhoneInCallService : InCallService() {
         val callback = object : Call.Callback() {
             override fun onStateChanged(changedCall: Call, state: Int) {
                 if (state == Call.STATE_RINGING) {
-                    showIncomingCallNotification(changedCall)
+                    showIncomingCallUi(changedCall)
                 } else {
                     dismissIncomingNotification(this@PhoneInCallService)
                 }
@@ -46,15 +48,16 @@ class PhoneInCallService : InCallService() {
         call.registerCallback(callback)
 
         if (call.state == Call.STATE_RINGING) {
-            showIncomingCallNotification(call)
+            showIncomingCallUi(call)
         }
     }
 
     override fun onCallRemoved(call: Call) {
         callCallbacks.remove(call)?.let { call.unregisterCallback(it) }
+        if (uiCall == call) uiCall = null
         if (ActiveCall.current == call) ActiveCall.current = callCallbacks.keys.lastOrNull()
         val nextRingingCall = callCallbacks.keys.firstOrNull { it.state == Call.STATE_RINGING }
-        if (nextRingingCall != null) showIncomingCallNotification(nextRingingCall)
+        if (nextRingingCall != null) showIncomingCallUi(nextRingingCall)
         else dismissIncomingNotification(this)
         super.onCallRemoved(call)
     }
@@ -91,6 +94,25 @@ class PhoneInCallService : InCallService() {
 
         getSystemService(NotificationManager::class.java)
             ?.createNotificationChannel(channel)
+    }
+
+    /**
+     * When the user grants overlay access, open the normal incoming-call screen
+     * directly over the current app. The high-priority call notification remains
+     * as a fallback for devices that block background activity launches.
+     */
+    private fun showIncomingCallUi(call: Call) {
+        if (uiCall != call) {
+            uiCall = call
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) {
+                val intent = Intent(this, IncomingCallActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                runCatching { startActivity(intent) }
+                    .onFailure { if (uiCall == call) uiCall = null }
+            }
+        }
+        showIncomingCallNotification(call)
     }
 
     private fun showIncomingCallNotification(call: Call) {
