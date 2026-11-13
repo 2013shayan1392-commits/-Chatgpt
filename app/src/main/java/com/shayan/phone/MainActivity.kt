@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.CallLog
 import android.provider.ContactsContract
+import android.provider.Settings
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.VideoProfile
@@ -93,7 +94,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onBatterySettings = { runCatching { startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } },
+                    onBatterySettings = { runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } },
+                    onOverlaySettings = { runCatching { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) } },
                     permissionRefresh = permissionRefresh.intValue
                 )
                 diagnosticState.value?.let { report ->
@@ -201,6 +203,7 @@ fun PhoneApp(
     onCallPermission: () -> Unit,
     onNotificationsPermission: () -> Unit,
     onBatterySettings: () -> Unit,
+    onOverlaySettings: () -> Unit,
     permissionRefresh: Int
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -245,17 +248,20 @@ fun PhoneApp(
                 val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
                 val batteryExempt = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
                     powerManager.isIgnoringBatteryOptimizations(context.packageName)
-                val setupComplete = notificationGranted && contactsGranted && batteryExempt && isDefaultDialer
+                val overlayGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+                val setupComplete = notificationGranted && contactsGranted && batteryExempt && overlayGranted && isDefaultDialer
                 if (!setupComplete) {
                     SetupPermissionsCard(
                         notificationsGranted = notificationGranted,
                         batteryExempt = batteryExempt,
                         contactsGranted = contactsGranted,
                         defaultDialer = isDefaultDialer,
+                        overlayGranted = overlayGranted,
                         onNotifications = onNotificationsPermission,
                         onBattery = onBatterySettings,
                         onContacts = onContactsPermission,
-                        onDefault = onDefault
+                        onDefault = onDefault,
+                        onOverlay = onOverlaySettings
                     )
                 }
             }
@@ -378,10 +384,12 @@ fun SetupPermissionsCard(
     batteryExempt: Boolean,
     contactsGranted: Boolean,
     defaultDialer: Boolean,
+    overlayGranted: Boolean,
     onNotifications: () -> Unit,
     onBattery: () -> Unit,
     onContacts: () -> Unit,
-    onDefault: () -> Unit
+    onDefault: () -> Unit,
+    onOverlay: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -396,6 +404,7 @@ fun SetupPermissionsCard(
             SetupPermissionRow("بهینه‌سازی باتری", batteryExempt, "تنظیم", onBattery)
             SetupPermissionRow("مخاطبین و تماس‌ها", contactsGranted, "اجازه دادن", onContacts)
             SetupPermissionRow("تلفن پیش‌فرض", defaultDialer, "انتخاب", onDefault)
+            SetupPermissionRow("نمایش روی سایر برنامه‌ها", overlayGranted, "فعال‌سازی", onOverlay)
         }
     }
 }
