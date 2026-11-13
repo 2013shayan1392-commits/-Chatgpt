@@ -177,6 +177,7 @@ fun PhoneApp(
     onAccessibilitySettings: () -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
+    var showAudioTest by remember { mutableStateOf(false) }
     var showAccessibilityLog by remember { mutableStateOf(false) }
     var logRefresh by remember { mutableIntStateOf(0) }
     var number by remember { mutableStateOf("") }
@@ -195,7 +196,8 @@ fun PhoneApp(
                 isDefault = isDefaultDialer,
                 onDefault = { onDefault() },
                 onAccessibilitySettings = onAccessibilitySettings,
-                onShowLog = { logRefresh++; showAccessibilityLog = true }
+                onShowLog = { logRefresh++; showAccessibilityLog = true },
+                onAudioTest = { showAudioTest = true }
             )
         },
         bottomBar = {
@@ -208,6 +210,7 @@ fun PhoneApp(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             if (activeCall != null) InCallPanel(activeCall, onFinish = { ActiveCall.current = null })
+            else if (showAudioTest) AudioDiagnosticScreen(onBack = { showAudioTest = false })
             else when (tab) {
                 0 -> DialerScreen(number, { number = it }, {
                     if (number.isBlank()) return@DialerScreen
@@ -239,11 +242,16 @@ fun TopAppBarPhone(
     isDefault: Boolean,
     onDefault: () -> Unit,
     onAccessibilitySettings: () -> Unit,
-    onShowLog: () -> Unit
+    onShowLog: () -> Unit,
+    onAudioTest: () -> Unit
 ) {
     TopAppBar(
         title = { Column { Text("تلفن", fontWeight = FontWeight.Bold); Text("SHAYAN PHONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) } },
         actions = {
+            TextButton(onClick = onAudioTest) {
+                Icon(Icons.Default.GraphicEq, null)
+                Text("آزمایش صدا")
+            }
             TextButton(onClick = onAccessibilitySettings) {
                 Icon(Icons.Default.Accessibility, null)
                 Text("دسترسی")
