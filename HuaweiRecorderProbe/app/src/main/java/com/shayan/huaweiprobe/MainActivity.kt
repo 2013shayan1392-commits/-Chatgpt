@@ -68,6 +68,63 @@ class MainActivity : Activity() {
         output.append("\n[$stamp] $message")
     }
 
+    @Suppress("DEPRECATION")
+    private fun logPermissionDetails() {
+        log("بررسی مشخصات مجوز در PackageManager…")
+        val permissionInfo = try {
+            packageManager.getPermissionInfo(requiredPermission, 0)
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
+        } catch (e: Exception) {
+            log("خواندن مشخصات مجوز ناموفق بود: ${e.javaClass.simpleName}")
+            null
+        }
+
+        if (permissionInfo == null) {
+            log("این مجوز در PackageManager ثبت نشده یا برای این برنامه قابل مشاهده نیست.")
+            return
+        }
+
+        log("مجوز توسط بستهٔ زیر تعریف شده: ${permissionInfo.packageName}")
+        log("Protection level: ${android.content.pm.PermissionInfo.protectionToString(permissionInfo.protectionLevel)}")
+        log("Protection level عددی: 0x${permissionInfo.protectionLevel.toString(16)}")
+        log("Permission group: ${permissionInfo.group ?: "ندارد"}")
+
+        val installed = try {
+            packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS)
+        } catch (e: Exception) {
+            log("فهرست بسته‌های درخواست‌کننده خوانده نشد: ${e.javaClass.simpleName}")
+            emptyList()
+        }
+
+        val requesters = installed.mapNotNull { pkg ->
+            val requested = pkg.requestedPermissions ?: return@mapNotNull null
+            val index = requested.indexOf(requiredPermission)
+            if (index < 0) return@mapNotNull null
+            val flags = pkg.requestedPermissionsFlags
+            val granted = flags != null && index < flags.size &&
+                (flags[index] and android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+            "${pkg.packageName} (granted=$granted)"
+        }
+
+        log("بسته‌های قابل مشاهده‌ای که این مجوز را درخواست کرده‌اند: ${requesters.size}")
+        if (requesters.isEmpty()) {
+            log("هیچ درخواست‌کننده‌ای در فهرست قابل مشاهده پیدا نشد.")
+        } else {
+            requesters.forEach { log("درخواست‌کننده: $it") }
+        }
+
+        val holders = try {
+            packageManager.getPackagesHoldingPermissions(arrayOf(requiredPermission), 0)
+        } catch (e: Exception) {
+            log("خواندن بسته‌های دارندهٔ مجوز ناموفق بود: ${e.javaClass.simpleName}")
+            emptyList()
+        }
+        log("بسته‌های قابل مشاهدهٔ دارای مجوز اعطاشده: ${holders.size}")
+        holders.forEach { log("دارندهٔ مجوز: ${it.packageName}") }
+        log("توجه: فهرست بسته‌ها ممکن است تحت محدودیت مشاهدهٔ بسته‌ها در اندروید 11 به بعد کامل نباشد.")
+    }
+
     private fun runDiagnostics() {
         if (isBound) {
             log("بررسی قبلی هنوز در حال اجراست.")
@@ -94,6 +151,7 @@ class MainActivity : Activity() {
 
         val permissionGranted = checkSelfPermission(requiredPermission) == PackageManager.PERMISSION_GRANTED
         log("مجوز اختصاصی هواوی: " + if (permissionGranted) "اعطا شده" else "اعطا نشده")
+        logPermissionDetails()
 
         val query = Intent(serviceAction).setPackage(servicePackage)
         val resolved = packageManager.resolveService(query, PackageManager.MATCH_DISABLED_COMPONENTS)
