@@ -352,6 +352,10 @@ fun DialerScreen(
     onEditContact: (Long) -> Unit,
     onSelectTab: (Int) -> Unit
 ) {
+    val dialerDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    val dialerPanelColor = if (dialerDarkTheme) androidx.compose.ui.graphics.Color(0xFF303030) else androidx.compose.ui.graphics.Color(0xFFF1F2F5)
+    val dialerPrimaryText = if (dialerDarkTheme) androidx.compose.ui.graphics.Color(0xFFF2F0F3) else androidx.compose.ui.graphics.Color(0xFF202127)
+    val dialerSecondaryText = if (dialerDarkTheme) androidx.compose.ui.graphics.Color(0xFFAAA7AE) else androidx.compose.ui.graphics.Color(0xFF656873)
     var sheetHeightFraction by remember { mutableFloatStateOf(0.61f) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
     val queryDigits = normalizePhone(number)
@@ -406,7 +410,7 @@ fun DialerScreen(
                     Text(
                         "مخاطبی با این شماره پیدا نشد",
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = dialerSecondaryText,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -416,7 +420,7 @@ fun DialerScreen(
             Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .fillMaxHeight(displayedSheetHeight)
-                .background(MaterialTheme.colorScheme.surfaceVariant,
+                .background(dialerPanelColor,
                     RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                 .padding(horizontal = 22.dp)
         ) {
@@ -434,7 +438,7 @@ fun DialerScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Box(Modifier.width(42.dp).height(5.dp)
-                    .background(androidx.compose.ui.graphics.Color(0xFF9A969D), RoundedCornerShape(8.dp)))
+                    .background(dialerSecondaryText.copy(alpha = 0.65f), RoundedCornerShape(8.dp)))
             }
             if (number.isNotBlank()) {
                 Row(
@@ -443,9 +447,9 @@ fun DialerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(onClick = { onNumber(number.dropLast(1)) }) {
-                        Icon(Icons.Default.Backspace, "حذف رقم", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Default.Backspace, "حذف رقم", tint = dialerSecondaryText)
                     }
-                    Text(number, color = MaterialTheme.colorScheme.onSurface,
+                    Text(number, color = dialerPrimaryText,
                         style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.End)
                 }
             } else {
@@ -470,7 +474,7 @@ fun DialerScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    Text(key, color = MaterialTheme.colorScheme.onSurface,
+                                    Text(key, color = dialerPrimaryText,
                                         style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Normal)
                                     if (letters.isNotEmpty()) Text(letters,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -502,7 +506,7 @@ fun DialerScreen(
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             IconButton(onClick = { sheetHeightFraction = if (sheetHeightFraction < 0.7f) 0.78f else 0.61f }) {
                                 Icon(Icons.Default.Dialpad, "تغییر اندازه شماره‌گیر",
-                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    tint = dialerPrimaryText,
                                     modifier = Modifier.size(27.dp))
                             }
                         }
