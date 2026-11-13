@@ -200,7 +200,7 @@ class MainActivity : Activity() {
             .setMessage(
                 "این آزمایش فقط وقتی انجام شود که تماس آزمایشی برقرار است و هر دو طرف از آزمایش صوتی خبر دارند و رضایت داده‌اند. " +
                     "برنامه برای هر منبع حداکثر حدود یک ثانیه نمونه را فقط در حافظه بررسی می‌کند، فقط سطح صدا را محاسبه می‌کند و هیچ فایل صوتی ذخیره یا ارسال نمی‌کند. " +
-                    "منابع VOICE_CALL، VOICE_UPLINK و VOICE_DOWNLINK جداگانه آزمایش می‌شوند."
+                    "فقط منابع عمومی MIC، VOICE_COMMUNICATION و VOICE_RECOGNITION آزمایش می‌شوند. دو منبع آخر برای سناریوهای ارتباطی/تشخیص گفتار هستند و موفقیت آن‌ها به معنی دسترسی به صدای تماس سیم‌کارتی نیست."
             )
             .setNegativeButton("لغو", null)
             .setPositiveButton("شروع آزمایش") { _, _ -> runAudioRouteProbe() }
@@ -229,10 +229,9 @@ class MainActivity : Activity() {
         log("مدل: ${android.os.Build.MODEL}؛ اندروید ${android.os.Build.VERSION.RELEASE}")
         Thread {
             val tests = listOf(
-                "VOICE_CALL" to MediaRecorder.AudioSource.VOICE_CALL,
-                "VOICE_UPLINK" to MediaRecorder.AudioSource.VOICE_UPLINK,
-                "VOICE_DOWNLINK" to MediaRecorder.AudioSource.VOICE_DOWNLINK,
-                "MIC (کنترل میکروفون؛ نه صدای تماس)" to MediaRecorder.AudioSource.MIC
+                "MIC (میکروفون؛ نه صدای تماس)" to MediaRecorder.AudioSource.MIC,
+                "VOICE_COMMUNICATION (مسیر ارتباطی؛ نه تضمین صدای تماس سیم‌کارتی)" to MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                "VOICE_RECOGNITION (تشخیص گفتار؛ نه صدای تماس سیم‌کارتی)" to MediaRecorder.AudioSource.VOICE_RECOGNITION
             )
             val results = tests.map { (label, source) -> testAudioSource(label, source) }
             runOnUiThread {
