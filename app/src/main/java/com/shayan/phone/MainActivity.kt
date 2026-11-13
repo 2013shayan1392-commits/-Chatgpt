@@ -500,10 +500,15 @@ fun DialerScreen(
         }
 
         if (!sheetExpanded) {
-            FloatingPhoneNavigationBar(
-                selectedTab = 0,
-                onSelect = onSelectTab,
-            )
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                FloatingPhoneNavigationBar(
+                    selectedTab = 0,
+                    onSelect = onSelectTab,
+                )
+            }
             FilledIconButton(
                 onClick = { sheetExpanded = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 94.dp).size(62.dp),
