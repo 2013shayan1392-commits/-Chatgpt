@@ -244,7 +244,7 @@ fun PhoneApp(
                             onCallPermission()
                         }
                     }, onEditContact = { id -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = contacts.firstOrNull { it.contactId == id } else onContactsPermission() })
-                    1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { id -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = contacts.firstOrNull { it.contactId == id } else onContactsPermission() })
+                    1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { person -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = person else onContactsPermission() })
                     else -> HistoryScreen(recents) { number = it; tab = 0 }
                 }
             }
@@ -353,6 +353,7 @@ fun DialerScreen(number: String, onNumber: (String) -> Unit, contacts: List<Pers
         }
         OutlinedTextField(value = number, onValueChange = onNumber,
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 58.dp),
+            readOnly = true,
             placeholder = { Text("شماره تلفن") }, singleLine = true,
             textStyle = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -402,7 +403,7 @@ fun DialerScreen(number: String, onNumber: (String) -> Unit, contacts: List<Pers
 }
 
 @Composable
-fun ContactsScreen(search: String, onSearch: (String) -> Unit, contacts: List<Person>, onCall: (String) -> Unit, onEdit: (Long) -> Unit) {
+fun ContactsScreen(search: String, onSearch: (String) -> Unit, contacts: List<Person>, onCall: (String) -> Unit, onEdit: (Person) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("مخاطبین", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
@@ -412,7 +413,7 @@ fun ContactsScreen(search: String, onSearch: (String) -> Unit, contacts: List<Pe
                 ListItem(
                     headlineContent = { Text(p.name) }, supportingContent = { Text(p.number) },
                     leadingContent = { Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(34.dp)) },
-                    trailingContent = { Row { IconButton(onClick = { onEdit(p.contactId) }) { Icon(Icons.Default.Edit, "ویرایش") }; IconButton(onClick = { onCall(p.number) }) { Icon(Icons.Default.Call, null) } } },
+                    trailingContent = { Row { IconButton(onClick = { onEdit(p) }) { Icon(Icons.Default.Edit, "ویرایش") }; IconButton(onClick = { onCall(p.number) }) { Icon(Icons.Default.Call, null) } } },
                     modifier = Modifier.clickable { onCall(p.number) }
                 )
                 HorizontalDivider()
