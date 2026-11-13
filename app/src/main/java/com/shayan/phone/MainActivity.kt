@@ -355,11 +355,13 @@ fun DialerScreen(
     var sheetHeightFraction by remember { mutableFloatStateOf(0.61f) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
     val queryDigits = normalizePhone(number)
-    val matching = if (number.isBlank()) emptyList() else contacts.filter { p ->
-        (queryDigits.isNotEmpty() && normalizePhone(p.number).contains(queryDigits)) ||
-            p.name.contains(number, ignoreCase = true)
-    }.take(30)
-    val targetSheetHeight = (sheetHeightFraction + if (number.isNotBlank()) 0.07f else 0f).coerceAtMost(0.90f)
+    val matching = if (number.isBlank()) emptyList() else contacts.filter { person ->
+        val contactDigits = normalizePhone(person.number)
+        (queryDigits.isNotEmpty() && contactDigits.contains(queryDigits)) ||
+            person.name.contains(number.trim(), ignoreCase = true)
+    }.distinctBy { it.contactId to normalizePhone(it.number) }.take(30)
+    // Expand the sheet slightly while entering a number so the keypad and call button keep their full size.
+    val targetSheetHeight = (sheetHeightFraction + if (number.isNotBlank()) 0.09f else 0f).coerceAtMost(0.88f)
     val displayedSheetHeight by animateFloatAsState(targetValue = targetSheetHeight, label = "dialer-sheet-height")
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Recent calls remain visible behind the bottom dialer panel.
@@ -414,7 +416,7 @@ fun DialerScreen(
             Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .fillMaxHeight(displayedSheetHeight)
-                .background(androidx.compose.ui.graphics.Color(0xFF303030),
+                .background(MaterialTheme.colorScheme.surfaceVariant,
                     RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                 .padding(horizontal = 22.dp)
         ) {
@@ -441,9 +443,9 @@ fun DialerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(onClick = { onNumber(number.dropLast(1)) }) {
-                        Icon(Icons.Default.Backspace, "حذف رقم", tint = androidx.compose.ui.graphics.Color.LightGray)
+                        Icon(Icons.Default.Backspace, "حذف رقم", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(number, color = androidx.compose.ui.graphics.Color.White,
+                    Text(number, color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.End)
                 }
             } else {
@@ -468,10 +470,10 @@ fun DialerScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    Text(key, color = androidx.compose.ui.graphics.Color(0xFFF2F0F3),
+                                    Text(key, color = MaterialTheme.colorScheme.onSurface,
                                         style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Normal)
                                     if (letters.isNotEmpty()) Text(letters,
-                                        color = androidx.compose.ui.graphics.Color(0xFF9D9AA0),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = MaterialTheme.typography.labelMedium)
                                 }
                             }
@@ -481,7 +483,7 @@ fun DialerScreen(
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             IconButton(onClick = { onNumber(number.dropLast(1)) }) {
                                 Icon(Icons.Default.Backspace, "حذف رقم",
-                                    tint = androidx.compose.ui.graphics.Color(0xFF9D9AA0),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(27.dp))
                             }
                         }
@@ -494,18 +496,13 @@ fun DialerScreen(
                                     containerColor = androidx.compose.ui.graphics.Color(0xFF55AD55)
                                 )
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center) {
-                                    Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(31.dp))
-                                    Text("VoLTE", style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold)
-                                }
+                                Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(31.dp))
                             }
                         }
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             IconButton(onClick = { sheetHeightFraction = if (sheetHeightFraction < 0.7f) 0.78f else 0.61f }) {
                                 Icon(Icons.Default.Dialpad, "تغییر اندازه شماره‌گیر",
-                                    tint = androidx.compose.ui.graphics.Color(0xFFE0DDE2),
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(27.dp))
                             }
                         }
