@@ -1,7 +1,7 @@
 name: Android APK
 on:
   push:
-    branches: [ main, release/2.2.3, release/2.2.4 ]
+    branches: [ main, release/2.2.3, release/2.2.4, release/2.2.5 ]
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,5 +22,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ShayanPhone-2.2.4-debug
+          name: ShayanPhone-2.2.5-debug
           path: app/build/outputs/apk/debug/app-debug.apk
