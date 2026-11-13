@@ -416,7 +416,7 @@ fun HistoryScreen(recents: List<Recent>, onCall: (String) -> Unit) {
 fun InCallPanel(call: Call, onFinish: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var state by remember { mutableIntStateOf(call.state) }
-    var speaker by remember { mutableStateOf(false) }
+    val speaker = ActiveCall.audioRoute.intValue == CallAudioState.ROUTE_SPEAKER
     val muted by ActiveCall.muted
     var keypad by remember { mutableStateOf(false) }
     var digits by remember { mutableStateOf("") }
@@ -454,8 +454,7 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     CallControl("بلندگو", if (speaker) Icons.Default.VolumeUp else Icons.Default.VolumeDown) {
-                        speaker = !speaker
-                        ActiveCall.service?.setAudioRoute(if (speaker) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_EARPIECE)
+                        ActiveCall.service?.setAudioRoute(if (speaker) CallAudioState.ROUTE_EARPIECE else CallAudioState.ROUTE_SPEAKER)
                     }
                     CallControl("بی‌صدا", if (muted) Icons.Default.MicOff else Icons.Default.Mic) { ActiveCall.setMuted(!muted) }
                     CallControl("صفحه‌کلید", Icons.Default.Dialpad) { keypad = true }
