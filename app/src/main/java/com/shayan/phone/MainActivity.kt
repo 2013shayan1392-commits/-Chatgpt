@@ -243,8 +243,8 @@ fun PhoneApp(
                             pendingCallNumber = number
                             onCallPermission()
                         }
-                    }, onEditContact = { id -> editingContact = contacts.firstOrNull { it.contactId == id } })
-                    1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { id -> editingContact = contacts.firstOrNull { it.contactId == id } })
+                    }, onEditContact = { id -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = contacts.firstOrNull { it.contactId == id } else onContactsPermission() })
+                    1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { id -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = contacts.firstOrNull { it.contactId == id } else onContactsPermission() })
                     else -> HistoryScreen(recents) { number = it; tab = 0 }
                 }
             }
