@@ -663,21 +663,31 @@ fun InCallPanel(call: Call, onFinish: () -> Unit) {
         call.registerCallback(callback)
         onDispose { call.unregisterCallback(callback) }
     }
-    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
+    val darkCallTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    val callBackground = if (darkCallTheme) androidx.compose.ui.graphics.Color(0xFF101114) else androidx.compose.ui.graphics.Color(0xFFF7F7F7)
+    val callPrimaryText = if (darkCallTheme) androidx.compose.ui.graphics.Color(0xFFF5F5F5) else androidx.compose.ui.graphics.Color(0xFF171717)
+    val callSecondaryText = if (darkCallTheme) androidx.compose.ui.graphics.Color(0xFFB8B8B8) else androidx.compose.ui.graphics.Color(0xFF666666)
+    val rejectColor = androidx.compose.ui.graphics.Color(0xFFE53935)
+    val answerColor = androidx.compose.ui.graphics.Color(0xFF20B45A)
+    Column(Modifier.fillMaxSize().background(callBackground).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
         Text(
             when (state) { Call.STATE_RINGING -> "تماس ورودی"; Call.STATE_DIALING -> "در حال تماس…"; Call.STATE_HOLDING -> "در انتظار"; else -> "تماس فعال" },
-            style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary
+            style = MaterialTheme.typography.titleMedium, color = callSecondaryText
         )
-        Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(92.dp), tint = MaterialTheme.colorScheme.primary)
+        Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(92.dp), tint = if (darkCallTheme) androidx.compose.ui.graphics.Color(0xFF90CAF9) else androidx.compose.ui.graphics.Color(0xFF456A9A))
         val phoneNumber = call.details.handle?.schemeSpecificPart.orEmpty()
         var savedName by remember(phoneNumber) { mutableStateOf<String?>(null) }
         LaunchedEffect(phoneNumber) { savedName = withContext(Dispatchers.IO) { lookupSavedContactName(context, phoneNumber) } }
-        Text(savedName ?: phoneNumber.ifBlank { "شماره ناشناس" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        if (savedName != null && phoneNumber.isNotBlank()) Text(phoneNumber, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+        Text(savedName ?: phoneNumber.ifBlank { "شماره ناشناس" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = callPrimaryText)
+        if (savedName != null && phoneNumber.isNotBlank()) Text(phoneNumber, style = MaterialTheme.typography.bodyMedium, color = callSecondaryText)
         if (state == Call.STATE_RINGING) {
-            Row(horizontalArrangement = Arrangement.spacedBy(30.dp)) {
-                FilledIconButton(onClick = { call.reject(false, null) }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.CallEnd, "رد تماس") }
-                FilledIconButton(onClick = { call.answer(VideoProfile.STATE_AUDIO_ONLY) }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF4F9B70))) { Icon(Icons.Default.Call, "پاسخ") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(64.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledIconButton(onClick = { call.reject(false, null) }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = rejectColor, contentColor = androidx.compose.ui.graphics.Color.White)) { Icon(Icons.Default.CallEnd, "رد تماس") }
+                FilledIconButton(onClick = { call.answer(VideoProfile.STATE_AUDIO_ONLY) }, modifier = Modifier.size(68.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = answerColor, contentColor = androidx.compose.ui.graphics.Color.White)) { Icon(Icons.Default.Call, "پاسخ") }
             }
         } else {
             if (keypad) {
