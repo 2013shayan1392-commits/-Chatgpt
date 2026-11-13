@@ -1,15 +1,20 @@
 package com.shayan.huaweiprobe
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.Button
@@ -19,10 +24,12 @@ import android.widget.TextView
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.sqrt
 
 class MainActivity : Activity() {
     private lateinit var output: TextView
     private lateinit var runButton: Button
+    private lateinit var audioProbeButton: Button
     private val handler = Handler(Looper.getMainLooper())
     private var connection: ServiceConnection? = null
     private var isBound = false
@@ -61,6 +68,16 @@ class MainActivity : Activity() {
             text = "نمایش کنترل‌های ضبط شناسایی‌شده"
             setOnClickListener { showUiObservations() }
         }
+        audioProbeButton = Button(this).apply {
+            text = "آزمایش دسترسی به صدای تماس"
+            setOnClickListener {
+                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_REQUEST)
+                } else {
+                    showAudioProbeConsent()
+                }
+            }
+        }
         output = TextView(this).apply {
             textSize = 13f
             setTextIsSelectable(true)
@@ -72,6 +89,7 @@ class MainActivity : Activity() {
         root.addView(runButton)
         root.addView(accessibilityButton)
         root.addView(uiReportButton)
+        root.addView(audioProbeButton)
         root.addView(ScrollView(this).apply { addView(output) },
             LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
@@ -173,6 +191,126 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 log("خواندن اطلاعات $relatedName ناموفق بود: ${e.javaClass.simpleName}")
             }
+        }
+    }
+
+    private fun showAudioProbeConsent() {
+        AlertDialog.Builder(this)
+            .setTitle("آزمایش مسیر صدای تماس")
+            .setMessage(
+                "این آزمایش فقط وقتی انجام شود که تماس آزمایشی برقرار است و هر دو طرف از آزمایش صوتی خبر دارند و رضایت داده‌اند. " +
+                    "برنامه برای هر منبع حداکثر حدود یک ثانیه نمونه را فقط در حافظه بررسی می‌کند، فقط سطح صدا را محاسبه می‌کند و هیچ فایل صوتی ذخیره یا ارسال نمی‌کند. " +
+                    "منابع VOICE_CALL، VOICE_UPLINK و VOICE_DOWNLINK جداگانه آزمایش می‌شوند."
+            )
+            .setNegativeButton("لغو", null)
+            .setPositiveButton("شروع آزمایش") { _, _ -> runAudioRouteProbe() }
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == AUDIO_PERMISSION_REQUEST) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                showAudioProbeConsent()
+            } else {
+                log("مجوز میکروفون داده نشد؛ آزمایش مسیر صوتی اجرا نشد.")
+            }
+        }
+    }
+
+    private fun runAudioRouteProbe() {
+        output.text = "گزارش آزمایش مسیر صدای تماس"
+        audioProbeButton.isEnabled = false
+        log("آزمایش شروع شد؛ هیچ فایل صوتی ذخیره یا ارسال نمی‌شود.")
+        log("مدل: ${android.os.Build.MODEL}؛ اندروید ${android.os.Build.VERSION.RELEASE}")
+        Thread {
+            val tests = listOf(
+                "VOICE_CALL" to MediaRecorder.AudioSource.VOICE_CALL,
+                "VOICE_UPLINK" to MediaRecorder.AudioSource.VOICE_UPLINK,
+                "VOICE_DOWNLINK" to MediaRecorder.AudioSource.VOICE_DOWNLINK,
+                "MIC (کنترل میکروفون؛ نه صدای تماس)" to MediaRecorder.AudioSource.MIC
+            )
+            val results = tests.map { (label, source) -> testAudioSource(label, source) }
+            runOnUiThread {
+                results.forEach { log(it) }
+                log("پایان آزمایش. هیچ نمونهٔ صوتی در فایل یا حافظهٔ دائمی ذخیره نشد.")
+                audioProbeButton.isEnabled = true
+            }
+        }.start()
+    }
+
+    private fun testAudioSource(label: String, source: Int): String {
+        var recorder: AudioRecord? = null
+        try {
+            val sampleRate = 16000
+            val minBuffer = AudioRecord.getMinBufferSize(
+                sampleRate,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+            if (minBuffer <= 0) {
+                return "$label: بافر معتبر نیست (getMinBufferSize=$minBuffer)"
+            }
+
+            recorder = AudioRecord.Builder()
+                .setAudioSource(source)
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .build()
+                )
+                .setBufferSizeInBytes(maxOf(minBuffer, 8192))
+                .build()
+
+            if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+                return "$label: AudioRecord مقداردهی اولیه نشد."
+            }
+
+            recorder.startRecording()
+            if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                return "$label: شروع دریافت صوت تأیید نشد."
+            }
+
+            val samples = ShortArray(2048)
+            var count = 0L
+            var sumSquares = 0.0
+            var peak = 0
+            val deadline = SystemClock.elapsedRealtime() + 1000L
+
+            while (SystemClock.elapsedRealtime() < deadline && count < sampleRate.toLong()) {
+                val read = recorder.read(samples, 0, samples.size, AudioRecord.READ_BLOCKING)
+                if (read < 0) {
+                    return "$label: خطای خواندن صوت (کد=$read)"
+                }
+                for (i in 0 until read) {
+                    val value = samples[i].toInt()
+                    val magnitude = kotlin.math.abs(value)
+                    if (magnitude > peak) peak = magnitude
+                    sumSquares += value.toDouble() * value.toDouble()
+                }
+                count += read
+            }
+
+            if (count == 0L) return "$label: شروع شد، اما نمونه‌ای دریافت نشد."
+            val rms = sqrt(sumSquares / count.toDouble())
+            return "$label: شروع موفق؛ نمونه=$count؛ RMS=${"%.1f".format(Locale.US, rms)}؛ Peak=$peak. نمونه‌ها دور ریخته شدند."
+        } catch (e: SecurityException) {
+            return "$label: رد دسترسی (SecurityException: ${e.message ?: "بدون توضیح"})."
+        } catch (e: IllegalArgumentException) {
+            return "$label: منبع/پارامتر پشتیبانی نمی‌شود (IllegalArgumentException)."
+        } catch (e: Exception) {
+            return "$label: خطا=${e.javaClass.simpleName}: ${e.message ?: "بدون توضیح"}"
+        } finally {
+            try {
+                if (recorder?.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
+            } catch (_: Exception) { }
+            try { recorder?.release() } catch (_: Exception) { }
         }
     }
 
@@ -313,6 +451,8 @@ class MainActivity : Activity() {
             runButton.isEnabled = true
         }
     }
+
+    companion object { private const val AUDIO_PERMISSION_REQUEST = 7301 }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
