@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
@@ -49,6 +50,17 @@ class MainActivity : Activity() {
             text = "شروع بررسی"
             setOnClickListener { runDiagnostics() }
         }
+
+        val accessibilityButton = Button(this).apply {
+            text = "فعال‌سازی مشاهده‌گر رابط تماس"
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }
+        val uiReportButton = Button(this).apply {
+            text = "نمایش کنترل‌های ضبط شناسایی‌شده"
+            setOnClickListener { showUiObservations() }
+        }
         output = TextView(this).apply {
             textSize = 13f
             setTextIsSelectable(true)
@@ -58,6 +70,8 @@ class MainActivity : Activity() {
         root.addView(title)
         root.addView(subtitle)
         root.addView(runButton)
+        root.addView(accessibilityButton)
+        root.addView(uiReportButton)
         root.addView(ScrollView(this).apply { addView(output) },
             LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
@@ -160,6 +174,24 @@ class MainActivity : Activity() {
                 log("خواندن اطلاعات $relatedName ناموفق بود: ${e.javaClass.simpleName}")
             }
         }
+    }
+
+    private fun showUiObservations() {
+        output.text = "گزارش مشاهدهٔ رابط تماس"
+        val prefs = getSharedPreferences("ui_probe", MODE_PRIVATE)
+        val matches = prefs.getStringSet("matches", emptySet())?.toList()?.sorted().orEmpty()
+        val lastScan = prefs.getLong("last_scan", 0L)
+        if (lastScan > 0L) {
+            log("آخرین مشاهده: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(lastScan)))
+        }
+        if (matches.isEmpty()) {
+            log("هنوز کنترل مرتبط با ضبط در رابط تماس هواوی شناسایی نشده است.")
+            log("برای آزمایش، مشاهده‌گر را در تنظیمات دسترس‌پذیری فعال کن و سپس یک تماس آزمایشی برقرار کن.")
+        } else {
+            log("تعداد کنترل‌های مرتبط شناسایی‌شده: " + matches.size)
+            matches.forEach { log(it) }
+        }
+        log("این مشاهده‌گر فقط رابط قابل‌مشاهده را می‌خواند؛ هیچ دکمه‌ای را لمس نمی‌کند و هیچ صدایی ضبط نمی‌کند.")
     }
 
     private fun runDiagnostics() {
