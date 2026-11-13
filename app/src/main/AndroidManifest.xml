@@ -56,6 +56,19 @@
             android:exported="false" />
 
         <service
+            android:name=".CallUiAccessibilityService"
+            android:label="@string/call_accessibility_service_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/call_accessibility_service" />
+        </service>
+
+        <service
             android:name=".PhoneInCallService"
             android:permission="android.permission.BIND_INCALL_SERVICE"
             android:exported="true">
