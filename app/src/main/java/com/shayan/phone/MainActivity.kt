@@ -227,14 +227,16 @@ fun PhoneApp(
             )
         },
         bottomBar = {
-            FloatingPhoneNavigationBar(
-                selectedTab = tab,
-                onSelect = { selected ->
-                    tab = selected
-                    if (selected == 1 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) onContactsPermission()
-                    if (selected == 2 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) onHistoryPermission()
-                }
-            )
+            if (tab != 0) {
+                FloatingPhoneNavigationBar(
+                    selectedTab = tab,
+                    onSelect = { selected ->
+                        tab = selected
+                        if (selected == 1 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) onContactsPermission()
+                        if (selected == 2 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) onHistoryPermission()
+                    }
+                )
+            }
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
@@ -249,7 +251,12 @@ fun PhoneApp(
                             pendingCallNumber = number
                             onCallPermission()
                         }
-                    }, onEditContact = { id -> val person = contacts.firstOrNull { it.contactId == id }; if (person != null && ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = person else if (person != null) { pendingEditContact = person; onContactsPermission() } })
+                    }, onEditContact = { id -> val person = contacts.firstOrNull { it.contactId == id }; if (person != null && ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = person else if (person != null) { pendingEditContact = person; onContactsPermission() } },
+                        onSelectTab = { selected ->
+                            tab = selected
+                            if (selected == 1 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) onContactsPermission()
+                            if (selected == 2 && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) onHistoryPermission()
+                        })
                     1 -> ContactsScreen(search, { search = it }, contacts, onCall = { number = it; tab = 0 }, onEdit = { person -> if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) editingContact = person else { pendingEditContact = person; onContactsPermission() } })
                     else -> HistoryScreen(recents) { number = it; tab = 0 }
                 }
@@ -336,74 +343,148 @@ fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
 }
 
 @Composable
-fun DialerScreen(number: String, onNumber: (String) -> Unit, contacts: List<Person>, recents: List<Recent>, onCall: () -> Unit, onEditContact: (Long) -> Unit) {
-    var expanded by remember { mutableStateOf(true) }
+fun DialerScreen(
+    number: String,
+    onNumber: (String) -> Unit,
+    contacts: List<Person>,
+    recents: List<Recent>,
+    onCall: () -> Unit,
+    onEditContact: (Long) -> Unit,
+    onSelectTab: (Int) -> Unit
+) {
+    var sheetHeightFraction by remember { mutableFloatStateOf(0.61f) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
     val matching = if (number.isBlank()) emptyList() else contacts.filter { p ->
         normalizePhone(p.number).contains(normalizePhone(number)) || p.name.contains(number, ignoreCase = true)
     }.take(30)
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Box(Modifier.fillMaxWidth().height(27.dp).pointerInput(expanded) {
-            detectVerticalDragGestures(onVerticalDrag = { _, amount -> dragTotal += amount }, onDragEnd = {
-                if (dragTotal < -30f) expanded = true
-                if (dragTotal > 30f) expanded = false
-                dragTotal = 0f
-            })
-        }, contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.width(34.dp).height(4.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp)))
-                Text(if (expanded) "برای دیدن مخاطبین و سوابق، به پایین بکشید" else "برای باز کردن شماره‌گیر، به بالا بکشید",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Recent calls remain visible behind the bottom dialer panel.
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)
+                .padding(bottom = maxHeight * 0.60f)
+        ) {
+            items(recents.take(50)) { c ->
+                ListItem(
+                    headlineContent = { Text(c.name, fontWeight = FontWeight.Medium) },
+                    supportingContent = { Text(c.number) },
+                    leadingContent = { Icon(Icons.Default.Info, null) },
+                    trailingContent = {
+                        IconButton(onClick = { onNumber(c.number) }) {
+                            Icon(Icons.Default.Call, "شماره‌گیری")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().clickable { onNumber(c.number) },
+                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
             }
         }
-        OutlinedTextField(value = number, onValueChange = onNumber,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 58.dp),
-            readOnly = true,
-            placeholder = { Text("شماره تلفن") }, singleLine = true,
-            textStyle = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            trailingIcon = { IconButton(onClick = { onNumber(number.dropLast(1)) }) { Icon(Icons.Default.Backspace, null) } })
-        if (!expanded) {
-            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-                if (number.isNotBlank()) {
-                    if (matching.isEmpty()) item { Text("مخاطبی با این شماره پیدا نشد", Modifier.fillMaxWidth().padding(18.dp), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.secondary) }
-                    items(matching, key = { it.contactId.toString() + ":" + it.dataId }) { p ->
-                        ListItem(headlineContent = { Text(p.name, fontWeight = FontWeight.SemiBold) },
-                            supportingContent = { Text(p.number) }, modifier = Modifier.fillMaxWidth().clickable { onNumber(p.number) })
-                        HorizontalDivider()
-                    }
-                } else {
-                    item { Text("سوابق تماس", Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium) }
-                    items(recents.take(40)) { c ->
-                        ListItem(headlineContent = { Text(c.name) }, supportingContent = { Text(c.number) },
-                            leadingContent = { Icon(if (c.type == CallLog.Calls.INCOMING_TYPE) Icons.Default.CallReceived else Icons.Default.CallMade, null) },
-                            modifier = Modifier.fillMaxWidth().clickable { onNumber(c.number) },
-                            trailingContent = { IconButton(onClick = { onNumber(c.number) }) { Icon(Icons.Default.Call, "شماره‌گیری") } })
-                        HorizontalDivider()
-                    }
-                }
+        Column(
+            Modifier.align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(sheetHeightFraction)
+                .background(androidx.compose.ui.graphics.Color(0xFF303030),
+                    RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                .padding(horizontal = 22.dp)
+        ) {
+            Box(
+                Modifier.fillMaxWidth().height(30.dp)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { _, amount -> dragTotal += amount },
+                            onDragEnd = {
+                                sheetHeightFraction = if (dragTotal < -35f) 0.78f else if (dragTotal > 35f) 0.52f else sheetHeightFraction
+                                dragTotal = 0f
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(Modifier.width(42.dp).height(5.dp)
+                    .background(androidx.compose.ui.graphics.Color(0xFF9A969D), RoundedCornerShape(8.dp)))
             }
-        } else {
+            if (number.isNotBlank()) {
+                Row(
+                    Modifier.fillMaxWidth().height(42.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    IconButton(onClick = { onNumber(number.dropLast(1)) }) {
+                        Icon(Icons.Default.Backspace, "حذف رقم", tint = androidx.compose.ui.graphics.Color.LightGray)
+                    }
+                    Text(number, color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.End)
+                }
+            } else {
+                Spacer(Modifier.height(8.dp))
+            }
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                val keys = listOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL", "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "*" to "", "0" to "+", "#" to "")
-                keys.chunked(3).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        row.forEach { (key, letters) ->
-                            Column(Modifier.padding(1.dp).size(54.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                                .clickable { onNumber(number + key) }, horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center) {
-                                Text(key, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium)
-                                if (letters.isNotEmpty()) Text(letters, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                val keys = listOf(
+                    "1" to "", "2" to "ABC", "3" to "DEF",
+                    "4" to "GHI", "5" to "JKL", "6" to "MNO",
+                    "7" to "PQRS", "8" to "TUV", "9" to "WXYZ",
+                    "*" to "(P)", "0" to "+", "#" to "(W)"
+                )
+                Column(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    keys.chunked(3).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            row.forEach { (key, letters) ->
+                                Column(
+                                    Modifier.weight(1f).height(62.dp).clickable { onNumber(number + key) },
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(key, color = androidx.compose.ui.graphics.Color(0xFFF2F0F3),
+                                        style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Normal)
+                                    if (letters.isNotEmpty()) Text(letters,
+                                        color = androidx.compose.ui.graphics.Color(0xFF9D9AA0),
+                                        style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().height(78.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            IconButton(onClick = { onNumber(number.dropLast(1)) }) {
+                                Icon(Icons.Default.Backspace, "حذف رقم",
+                                    tint = androidx.compose.ui.graphics.Color(0xFF9D9AA0),
+                                    modifier = Modifier.size(27.dp))
+                            }
+                        }
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            FilledIconButton(
+                                onClick = onCall,
+                                modifier = Modifier.size(76.dp),
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = androidx.compose.ui.graphics.Color(0xFF55AD55)
+                                )
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center) {
+                                    Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(31.dp))
+                                    Text("VoLTE", style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            IconButton(onClick = { sheetHeightFraction = if (sheetHeightFraction < 0.7f) 0.78f else 0.61f }) {
+                                Icon(Icons.Default.Dialpad, "تغییر اندازه شماره‌گیر",
+                                    tint = androidx.compose.ui.graphics.Color(0xFFE0DDE2),
+                                    modifier = Modifier.size(27.dp))
                             }
                         }
                     }
                 }
             }
-            FilledIconButton(onClick = onCall, modifier = Modifier.size(54.dp), shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF35A853))) {
-                Icon(Icons.Default.Call, "تماس", modifier = Modifier.size(25.dp))
-            }
+            FloatingPhoneNavigationBar(
+                selectedTab = 0,
+                onSelect = onSelectTab
+            )
         }
     }
 }
