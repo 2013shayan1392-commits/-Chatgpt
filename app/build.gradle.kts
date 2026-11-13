@@ -10,8 +10,8 @@ android {
         applicationId = "com.shayan.phone"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "2.2.4"
+        versionCode = 9
+        versionName = "2.2.5"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
