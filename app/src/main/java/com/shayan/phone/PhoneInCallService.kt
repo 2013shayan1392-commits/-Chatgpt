@@ -102,16 +102,41 @@ class PhoneInCallService : InCallService() {
      * as a fallback for devices that block background activity launches.
      */
     private fun showIncomingCallUi(call: Call) {
-        if (uiCall != call) {
-            uiCall = call
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) {
+        val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+        val isLocked = keyguard?.isKeyguardLocked ?: true
+        val overlayAllowed =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
+
+        // While unlocked, show the in-app full-screen UI directly. Keep the
+        // full-screen call notification only as a fallback or for the lock screen.
+        if (!isLocked && overlayAllowed) {
+            if (uiCall != call) {
+                uiCall = call
                 val intent = Intent(this, IncomingCallActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
                 }
-                runCatching { startActivity(intent) }
-                    .onFailure { if (uiCall == call) uiCall = null }
+                val launched = runCatching {
+                    startActivity(intent)
+                    true
+                }.getOrDefault(false)
+
+                if (launched) {
+                    dismissIncomingNotification(this)
+                    return
+                }
+            } else {
+                dismissIncomingNotification(this)
+                return
             }
         }
+
+        // On the lock screen Android needs the full-screen notification intent.
+        // It is also the fallback when direct activity launch is unavailable.
+        if (uiCall != call) uiCall = call
         showIncomingCallNotification(call)
     }
 
