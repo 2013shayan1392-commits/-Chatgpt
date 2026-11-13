@@ -370,7 +370,7 @@ fun DialerScreen(
             Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)
                 .padding(bottom = if (sheetExpanded) maxHeight * 0.80f else 88.dp)
         ) {
-            if (number.isBlank()) {
+            if (!sheetExpanded || number.isBlank()) {
                 items(recents.take(50)) { c ->
                     ListItem(
                         headlineContent = { Text(c.name, fontWeight = FontWeight.Medium) },
