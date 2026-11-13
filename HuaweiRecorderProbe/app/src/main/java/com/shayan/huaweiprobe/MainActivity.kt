@@ -123,6 +123,33 @@ class MainActivity : Activity() {
         log("بسته‌های قابل مشاهدهٔ دارای مجوز اعطاشده: ${holders.size}")
         holders.forEach { log("دارندهٔ مجوز: ${it.packageName}") }
         log("توجه: فهرست بسته‌ها ممکن است تحت محدودیت مشاهدهٔ بسته‌ها در اندروید 11 به بعد کامل نباشد.")
+
+        log("مقایسهٔ UID و وضعیت مجوز بسته‌های مرتبط…")
+        val relatedPackages = listOf(servicePackage, "com.android.incallui", "com.android.phone", packageName).distinct()
+        val thisUid = applicationInfo.uid
+        log("اپ آزمایشی: $packageName؛ UID=$thisUid؛ مجوز=" + if (checkSelfPermission(requiredPermission) == PackageManager.PERMISSION_GRANTED) "اعطا شده" else "اعطا نشده")
+        relatedPackages.forEach { relatedName ->
+            try {
+                val related = packageManager.getPackageInfo(relatedName, PackageManager.GET_PERMISSIONS)
+                val uid = related.applicationInfo.uid
+                val requestIndex = related.requestedPermissions?.indexOf(requiredPermission) ?: -1
+                val requested = requestIndex >= 0
+                val requestedGranted = requested && related.requestedPermissionsFlags != null &&
+                    requestIndex < related.requestedPermissionsFlags.size &&
+                    (related.requestedPermissionsFlags[requestIndex] and android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+                val uidPermissionGranted = packageManager.checkPermission(requiredPermission, relatedName) == PackageManager.PERMISSION_GRANTED
+                @Suppress("DEPRECATION")
+                val sharedUid = related.sharedUserId ?: "ندارد"
+                log("بسته: $relatedName")
+                log("  UID=$uid؛ sharedUserId=$sharedUid؛ هم‌UID با اپ آزمایشی=${uid == thisUid}")
+                log("  مجوز را در Manifest درخواست کرده؟ $requested؛ پرچم granted=$requestedGranted")
+                log("  بررسی PackageManager برای این بسته: " + if (uidPermissionGranted) "GRANTED" else "DENIED")
+            } catch (_: PackageManager.NameNotFoundException) {
+                log("بستهٔ مرتبط نصب نیست یا قابل مشاهده نیست: $relatedName")
+            } catch (e: Exception) {
+                log("خواندن اطلاعات $relatedName ناموفق بود: ${e.javaClass.simpleName}")
+            }
+        }
     }
 
     private fun runDiagnostics() {
@@ -135,6 +162,9 @@ class MainActivity : Activity() {
         log("مدل: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         log("اندروید: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
         log("ساخت سیستم: ${android.os.Build.DISPLAY}")
+        @Suppress("DEPRECATION")
+        val probeVersion = packageManager.getPackageInfo(packageName, 0).versionName
+        log("نسخهٔ ابزار تشخیصی: ${probeVersion ?: "نامشخص"}")
 
         val packageInfo = try {
             packageManager.getPackageInfo(servicePackage, 0)
