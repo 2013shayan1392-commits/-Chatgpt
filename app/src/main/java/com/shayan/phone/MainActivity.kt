@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
+import android.os.PowerManager
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.telecom.Call
@@ -65,26 +66,23 @@ class MainActivity : ComponentActivity() {
             diagnosticState.value = "انتخاب نقش انجام نشد.\n\n${dialerEligibilityReport()}\n\nاین گزارش را کامل برای بررسی ارسال کن."
         }
     }
-    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
-        if (results.values.any { it }) permissionRefresh.value++
-    }
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissionRefresh.value++ }
     private val permissionRefresh = mutableIntStateOf(0)
-    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { permissionRefresh.value++ }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshDefaultDialer()
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
         setContent {
             ShayanPhoneTheme {
                 PhoneApp(
                     context = this,
                     isDefaultDialer = defaultDialerState.value,
                     onDefault = { requestDialerRole() },
-                    onContactsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS)) },
+                    onContactsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS, Manifest.permission.READ_CALL_LOG, Manifest.permission.CALL_PHONE)) },
                     onHistoryPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG)) },
                     onCallPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE)) },
+                    onNotificationsPermission = { if (Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                    onBatterySettings = { runCatching { startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } },
                     permissionRefresh = permissionRefresh.intValue
                 )
                 diagnosticState.value?.let { report ->
@@ -101,6 +99,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshDefaultDialer()
+        permissionRefresh.intValue++
     }
 
     private fun refreshDefaultDialer() {
@@ -189,6 +188,8 @@ fun PhoneApp(
     onContactsPermission: () -> Unit,
     onHistoryPermission: () -> Unit,
     onCallPermission: () -> Unit,
+    onNotificationsPermission: () -> Unit,
+    onBatterySettings: () -> Unit,
     permissionRefresh: Int
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -219,12 +220,32 @@ fun PhoneApp(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBarPhone(
-                isDefault = isDefaultDialer,
-                onDefault = {
-                    onDefault()
+            Column {
+                TopAppBarPhone()
+                val notificationGranted = Build.VERSION.SDK_INT < 33 ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                val contactsGranted =
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                val batteryExempt = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                    powerManager.isIgnoringBatteryOptimizations(context.packageName)
+                val setupComplete = notificationGranted && contactsGranted && batteryExempt && isDefaultDialer
+                if (!setupComplete) {
+                    SetupPermissionsCard(
+                        notificationsGranted = notificationGranted,
+                        batteryExempt = batteryExempt,
+                        contactsGranted = contactsGranted,
+                        defaultDialer = isDefaultDialer,
+                        onNotifications = onNotificationsPermission,
+                        onBattery = onBatterySettings,
+                        onContacts = onContactsPermission,
+                        onDefault = onDefault
+                    )
                 }
-            )
+            }
         },
         bottomBar = {
             if (tab != 0) {
@@ -328,18 +349,63 @@ fun normalizePhone(value: String): String {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
+fun TopAppBarPhone() {
     TopAppBar(
-        title = { Column { Text("تلفن", fontWeight = FontWeight.Bold); Text("SHAYAN PHONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) } },
-        actions = {
-            TextButton(onClick = onDefault) {
-                Icon(if (isDefault) Icons.Default.Verified else Icons.Default.Settings, null)
-                Spacer(Modifier.width(5.dp))
-                Text(if (isDefault) "پیش‌فرض" else "تنظیم")
-            }
-        }
+        title = { Column {
+            Text("تلفن", fontWeight = FontWeight.Bold)
+            Text("SHAYAN PHONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+        } }
     )
+}
+
+@Composable
+fun SetupPermissionsCard(
+    notificationsGranted: Boolean,
+    batteryExempt: Boolean,
+    contactsGranted: Boolean,
+    defaultDialer: Boolean,
+    onNotifications: () -> Unit,
+    onBattery: () -> Unit,
+    onContacts: () -> Unit,
+    onDefault: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text("راه‌اندازی برنامه", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text("برای عملکرد کامل، موارد باقی‌مانده را فعال کن.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SetupPermissionRow("اعلان‌ها", notificationsGranted, "فعال‌سازی", onNotifications)
+            SetupPermissionRow("بهینه‌سازی باتری", batteryExempt, "تنظیم", onBattery)
+            SetupPermissionRow("مخاطبین و تماس‌ها", contactsGranted, "اجازه دادن", onContacts)
+            SetupPermissionRow("تلفن پیش‌فرض", defaultDialer, "انتخاب", onDefault)
+        }
+    }
+}
+
+@Composable
+fun SetupPermissionRow(title: String, enabled: Boolean, action: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            if (enabled) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(19.dp)
+        )
+        Text(title, modifier = Modifier.weight(1f).padding(horizontal = 9.dp), style = MaterialTheme.typography.bodyMedium)
+        if (!enabled) {
+            TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text(action, style = MaterialTheme.typography.labelMedium)
+            }
+        } else {
+            Text("فعال", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        }
+    }
 }
 
 @Composable
