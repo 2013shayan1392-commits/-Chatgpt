@@ -303,7 +303,7 @@ fun normalizePhone(value: String): String {
             in '٠'..'٩' -> ('0'.code + (ch.code - '٠'.code)).toChar()
             else -> ch
         }
-    }.filter { it.isDigit() }
+    }.filter { it.isDigit() }.joinToString("")
     return when {
         digits.startsWith("0098") -> "0" + digits.drop(4)
         digits.startsWith("98") && digits.length >= 12 -> "0" + digits.drop(2)
@@ -311,6 +311,7 @@ fun normalizePhone(value: String): String {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
     TopAppBar(
