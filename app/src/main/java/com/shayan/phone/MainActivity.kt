@@ -69,7 +69,8 @@ class MainActivity : ComponentActivity() {
                     onDefault = { requestDialerRole() },
                     onContactsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS)) },
                     onHistoryPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG)) },
-                    onCallPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE)) }
+                    onCallPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE)) },
+                    onAccessibilitySettings = { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                 )
                 diagnosticState.value?.let { report ->
                     AlertDialog(
@@ -172,9 +173,12 @@ fun PhoneApp(
     onDefault: () -> Unit,
     onContactsPermission: () -> Unit,
     onHistoryPermission: () -> Unit,
-    onCallPermission: () -> Unit
+    onCallPermission: () -> Unit,
+    onAccessibilitySettings: () -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
+    var showAccessibilityLog by remember { mutableStateOf(false) }
+    var logRefresh by remember { mutableIntStateOf(0) }
     var number by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var contacts by remember { mutableStateOf(emptyList<Person>()) }
@@ -189,9 +193,9 @@ fun PhoneApp(
         topBar = {
             TopAppBarPhone(
                 isDefault = isDefaultDialer,
-                onDefault = {
-                    onDefault()
-                }
+                onDefault = { onDefault() },
+                onAccessibilitySettings = onAccessibilitySettings,
+                onShowLog = { logRefresh++; showAccessibilityLog = true }
             )
         },
         bottomBar = {
@@ -215,15 +219,39 @@ fun PhoneApp(
                 else -> HistoryScreen(recents) { number = it; tab = 0 }
             }
         }
+        if (showAccessibilityLog) {
+            val logText = remember(logRefresh) { PhoneErrorLog.read(context) }
+            AlertDialog(
+                onDismissRequest = { showAccessibilityLog = false },
+                title = { Text("گزارش آزمایش دسترسی‌پذیری") },
+                text = { Text(logText, textAlign = TextAlign.Start) },
+                confirmButton = {
+                    TextButton(onClick = { showAccessibilityLog = false }) { Text("بستن") }
+                }
+            )
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TopAppBarPhone(isDefault: Boolean, onDefault: () -> Unit) {
+fun TopAppBarPhone(
+    isDefault: Boolean,
+    onDefault: () -> Unit,
+    onAccessibilitySettings: () -> Unit,
+    onShowLog: () -> Unit
+) {
     TopAppBar(
         title = { Column { Text("تلفن", fontWeight = FontWeight.Bold); Text("SHAYAN PHONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) } },
         actions = {
+            TextButton(onClick = onAccessibilitySettings) {
+                Icon(Icons.Default.Accessibility, null)
+                Text("دسترسی")
+            }
+            TextButton(onClick = onShowLog) {
+                Icon(Icons.Default.Article, null)
+                Text("گزارش")
+            }
             TextButton(onClick = onDefault) {
                 Icon(if (isDefault) Icons.Default.Verified else Icons.Default.Settings, null)
                 Spacer(Modifier.width(5.dp))
