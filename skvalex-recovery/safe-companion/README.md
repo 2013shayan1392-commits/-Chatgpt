@@ -10,6 +10,10 @@ This is a standalone Android application module. It is not a rebuilt, patched, o
 - Folder browsing is limited to the selected SAF tree; no broad storage permission or direct filesystem traversal is used.
 - Playback with play, pause/resume, stop, completion and error handling.
 - Foreground media-playback service and a notification with playback and stop controls.
+- Android MediaSession integration for lock-screen, headset and system media controls, including seek metadata.
+- Audio-focus management: transient interruption pause/resume, permanent-loss pause, and temporary volume ducking.
+- Automatic pause when the audio route becomes noisy (for example, wired headset unplug); wake-mode support for screen-off playback.
+- Playback state refresh when the main activity returns to the foreground.
 - Notification channel and Android 13+ notification permission handling.
 - Read-only display of active SIM slot, carrier label and display name through the public `SubscriptionManager` API. No phone number is displayed and no call routing or call-state monitoring is performed.
 - Settings to change appearance and clear the saved file/folder selections.
