@@ -37,10 +37,10 @@ These values are deliberately namespaced and deterministic. They preserve the re
 
 ### D. `Lo/rg2.a(Preference)` — offset 6929
 
-The listener constructs a `Lo/mj0` dialog fragment and passes the decoded string to the same `Lo/ia0.o0(fragment, tag)` path, which forwards it as the fragment transaction tag.
+The listener constructs a `Lo/mj0` dialog fragment and passes the decoded string to the same `Lo/ia0.o0(fragment, tag)` path, which forwards it as the fragment transaction tag. The `Lo/mj0` dialog implementation queries Android `SubscriptionManager`, reads active subscription information and display names, and binds a text-change listener. This identifies it as a SIM/subscription-selection dialog, rather than a generic file preference dialog.
 
 **Compatibility fallback identifier:**
-- Fragment transaction tag: `skvalex.files.preference-dialog`
+- Fragment transaction tag: `skvalex.files.sim-selection.dialog`
 
 This is a stable, namespaced fragment tag. Its exact semantic label is intentionally generic because the original literal and user-visible dialog purpose are not recoverable from the missing tail alone.
 
@@ -51,7 +51,7 @@ This is a stable, namespaced fragment tag. Its exact semantic label is intention
 | `FilesSettingsFragment.<clinit>` offset 7003 | Unused return value | Remove only the dead decoder call |
 | `Lo/pg2.a` offset 6981 | Bundle `fragment_tag` value for `Lo/ql0` | `skvalex.files.folder-picker` |
 | `Lo/pg2.a` offset 6959 | Fragment transaction tag for `Lo/ql0` | `skvalex.files.folder-picker.dialog` |
-| `Lo/rg2.a` offset 6929 | Fragment transaction tag for `Lo/mj0` | `skvalex.files.preference-dialog` |
+| `Lo/rg2.a` offset 6929 | Fragment transaction tag for the SIM/subscription dialog `Lo/mj0` | `skvalex.files.sim-selection.dialog` |
 
 ## Why stable identifiers are a reasonable substitute
 
