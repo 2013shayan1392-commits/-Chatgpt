@@ -38,7 +38,7 @@ The verifier checks the recorded SHA-256, ZIP CRC integrity, required archive en
 - Four encrypted-string call sites remain unresolved in the Files/recording-management settings UI.
 - The first call discards its return value during class initialization; removing it is only a candidate hypothesis, not an approved patch.
 - The other three calls are in preference listeners; their exact expected strings remain unknown.
-- See [RECOVERY_STATUS.md](RECOVERY_STATUS.md), [STRING_GAP_ANALYSIS.md](STRING_GAP_ANALYSIS.md), and [RECOVERY_CHECKPOINT_2026-11-14.md](RECOVERY_CHECKPOINT_2026-11-14.md).
+- See [RECOVERY_STATUS.md](RECOVERY_STATUS.md), [STRING_GAP_ANALYSIS.md](STRING_GAP_ANALYSIS.md), [RECOVERY_CHECKPOINT_2026-11-14.md](RECOVERY_CHECKPOINT_2026-11-14.md), and [UPSTREAM_RELEASE_SCAN.md](UPSTREAM_RELEASE_SCAN.md).
 
 ## Signing constraint
 
