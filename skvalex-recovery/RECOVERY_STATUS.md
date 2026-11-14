@@ -9,7 +9,8 @@ The original APK has now been revalidated:
 - ZIP CRC test: passed.
 - Required entries: AndroidManifest.xml, classes.dex, classes2.dex, resources.arsc.
 - Both DEX headers: valid magic, 0x70 header size, consistent declared file size, standard endian tag.
-- Read-only verifier and two unit tests were added; both tests pass.
+- Read-only verifier and two unit tests were added; both tests pass locally.
+- A GitHub Actions workflow was added to run the recovery-tool unit tests on workspace changes; the remote run result has not yet been confirmed.
 
 ## Static investigation completed
 
@@ -65,7 +66,8 @@ Changing any APK byte invalidates its original signature. Without the original d
 
 - Static investigation: substantial, not exhaustive semantic review of every method.
 - Baseline integrity: reverified.
-- Read-only validation tooling: added and tested.
+- Read-only validation tooling: added and tested locally.
+- GitHub Actions test workflow: configured; remote execution not yet confirmed.
 - Four missing string values: unresolved.
 - Source-level reconstruction: not started.
 - APK patch: not started.
