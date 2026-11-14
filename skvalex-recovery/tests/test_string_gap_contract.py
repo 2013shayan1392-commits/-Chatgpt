@@ -1,4 +1,8 @@
+import sys
 import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
 
 from check_string_gap_contract import (
     CallSite,
