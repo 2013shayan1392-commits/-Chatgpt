@@ -367,7 +367,11 @@ public final class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setText(text);
         t.setTextSize(size);
-        t.setTextColor(0xFF202124);
+        String themeMode = getPreferences(MODE_PRIVATE).getString("theme", "system");
+        int nightMode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        boolean darkMode = "dark".equals(themeMode)
+                || ("system".equals(themeMode) && nightMode == Configuration.UI_MODE_NIGHT_YES);
+        t.setTextColor(darkMode ? 0xFFF1F3F4 : 0xFF202124);
         if (bold) t.setTypeface(null, android.graphics.Typeface.BOLD);
         return t;
     }
