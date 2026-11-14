@@ -11,7 +11,6 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.Cursor;
-import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -316,17 +315,31 @@ public final class MainActivity extends Activity {
     }
 
     private void showSettings() {
-        String[] themes = {"همگام با سیستم", "روشن", "تیره"};
-        String current = getPreferences(MODE_PRIVATE).getString("theme", "system");
-        int selected = "light".equals(current) ? 1 : ("dark".equals(current) ? 2 : 0);
-        new AlertDialog.Builder(this).setTitle("نمایش")
-                .setSingleChoiceItems(themes, selected, (dialog, which) -> {
-                    String value = which == 1 ? "light" : (which == 2 ? "dark" : "system");
-                    getPreferences(MODE_PRIVATE).edit().putString("theme", value).apply();
-                    dialog.dismiss();
-                    recreate();
-                }).setNegativeButton("بستن", null).show();
-        // Saved-file and folder cleanup is available from the separate cleanup dialog.
+        String[] items = {
+                "ظاهر: همگام با سیستم",
+                "ظاهر: روشن",
+                "ظاهر: تیره",
+                "پاک کردن فایل انتخاب‌شده",
+                "پاک کردن پوشهٔ ذخیره‌شده"
+        };
+        new AlertDialog.Builder(this).setTitle("تنظیمات").setItems(items, (dialog, which) -> {
+            if (which <= 2) {
+                String value = which == 1 ? "light" : (which == 2 ? "dark" : "system");
+                getPreferences(MODE_PRIVATE).edit().putString("theme", value).apply();
+                recreate();
+            } else if (which == 3) {
+                audioUri = null;
+                getPreferences(MODE_PRIVATE).edit().remove("audio_uri").apply();
+                refreshSavedLabels();
+                updateControls(false, false);
+                status.setText("فایل ذخیره‌شده پاک شد.");
+            } else {
+                folderUri = null;
+                getPreferences(MODE_PRIVATE).edit().remove("folder_uri").apply();
+                refreshSavedLabels();
+                status.setText("پوشهٔ ذخیره‌شده پاک شد.");
+            }
+        }).setNegativeButton("بستن", null).show();
     }
 
     private void showAbout() {
