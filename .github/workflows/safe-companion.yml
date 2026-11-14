@@ -47,10 +47,7 @@ jobs:
             adb shell am start -n org.shayan.skvalexcompanion/.MainActivity
             sleep 5
             adb shell pidof org.shayan.skvalexcompanion
-            if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION.*org.shayan.skvalexcompanion"; then
-              echo "App crashed on Android 10 emulator"
-              exit 1
-            fi
+            adb logcat -d -s AndroidRuntime:E | grep -F "FATAL EXCEPTION" | grep -F "org.shayan.skvalexcompanion" && exit 1 || true
       - name: Android 16 emulator startup smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -65,10 +62,7 @@ jobs:
             adb shell am start -n org.shayan.skvalexcompanion/.MainActivity
             sleep 5
             adb shell pidof org.shayan.skvalexcompanion
-            if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION.*org.shayan.skvalexcompanion"; then
-              echo "App crashed on Android 16 emulator"
-              exit 1
-            fi
+            adb logcat -d -s AndroidRuntime:E | grep -F "FATAL EXCEPTION" | grep -F "org.shayan.skvalexcompanion" && exit 1 || true
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
