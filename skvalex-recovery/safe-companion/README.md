@@ -35,7 +35,7 @@ gradle --no-daemon clean testDebugUnitTest assembleDebug
 gradle --no-daemon lintDebug
 ```
 
-A GitHub Actions workflow at `.github/workflows/safe-companion.yml` builds the debug APK when this project changes on branch `skvalex-recovery`. A successful run uploads an artifact named `Safe-Companion-debug`.
+A GitHub Actions workflow at `.github/workflows/safe-companion.yml` builds the debug APK, runs lint, and performs startup smoke tests on Android 10 (API 29) and Android 16 (API 36) emulators when this project changes on branch `skvalex-recovery`. A successful run uploads an artifact named `Safe-Companion-debug`.
 
 ## Compatibility and verification
 - Source compatibility floor: Android 10 / API 29.
