@@ -59,3 +59,14 @@ Continue with non-capture static analysis of the two listener classes, resource 
 - Corrected the stale stage-19 narrative discrepancy: the DEX UTF-16 lengths are 22/44/66/96, not 24/46/68/98.
 - Kept the recovery target pinned to 3.7.3; no code/resources were transplanted from later binaries.
 - No application patch or final APK build was started because the original source/build configuration and signing authorization remain unavailable.
+
+
+## 2026-11-14 — First recovery-tool component
+
+- Added `tools/check_string_gap_contract.py` to formalize the four known decoder call sites.
+- The checker uses UTF-16 code units, matching Java `String.length()` semantics, and verifies the available tail lengths (22/44/66/96), requested read length (110), and whether each return value is discarded or consumed.
+- Added five unit tests, including a supplementary Unicode character case to distinguish UTF-16 units from Python code points.
+- Ran the new test module locally: 5 tests passed. The contract checker reports all four reads as out of bounds.
+- Fixed the test import path so GitHub Actions can import the tool from the workspace test directory.
+- This is a tested recovery/diagnostic component, not an APK patch. It deliberately does not invent replacement strings or alter app behavior.
+- Existing APK, DEX, native libraries, and capture/privileged code remain unchanged.
