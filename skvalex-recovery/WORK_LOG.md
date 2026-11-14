@@ -3,15 +3,28 @@
 ## 2026-11-14 — Workspace initialization
 
 - Created branch: `skvalex-recovery` from `main`.
-- Added `skvalex-recovery/README.md` and `skvalex-recovery/RECOVERY_STATUS.md`.
+- Added recovery scope, status, string-gap analysis, and work-log documents.
 - Recorded the preservation boundary: existing capture, privileged, native, and device-specific implementation remains untouched.
-- Kept the original APK and analysis bundle out of the public repository.
+- Kept the original APK and third-party binary out of the public repository.
 - No APK bytes or application code have been modified.
 
-## Current investigation checkpoint
+## 2026-11-14 — Baseline verification and string-callsite review
 
-The first unresolved area is the set of four encrypted-string call sites associated with file settings and dialog initialization. The current static evidence identifies the surrounding classes and preference keys, but does not prove all four original string values. Recovery must not replace unknown values with guesses.
+- Re-materialized the supplied `base(3).apk` and stage-17 analysis bundle from the Library.
+- Recomputed the APK SHA-256 and matched the recorded baseline exactly.
+- Ran ZIP CRC validation; all archive entries passed.
+- Checked required APK entries and both DEX headers, including magic, declared size, header size, and endian tag.
+- Added `tools/verify_skvalex_baseline.py`, a read-only baseline integrity checker.
+- Added unit tests for missing-file and wrong-hash rejection; both passed.
+- Rechecked the DEX decoder: it reads encoded characters through String.charAt without a prior length guard.
+- Narrowed the four unresolved calls to the Files/recording-management preference UI. Both listener classes point back to FilesSettingsFragment and are constructed during its preference setup.
+- Confirmed the class-initializer call discards the returned string. A no-op remains a hypothesis, not an approved patch.
+- No APK bytes, DEX instructions, native libraries, or recording paths were modified.
+
+## Current checkpoint
+
+The repository now contains a recovery workspace, evidence notes, and a tested read-only integrity tool. It does not yet contain reconstructed application source or a rebuilt APK. The four string values remain unresolved, and no patch is justified until independent evidence establishes the expected behavior.
 
 ## Next checkpoint
 
-Inspect the exact bytecode around each call site and all resource/metadata references that may constrain the missing strings. Record confidence and evidence for each candidate. Only exact, independently supported values qualify for a minimal repair.
+Continue with non-capture static analysis of the two listener classes, resource references, and caller contracts. Do not alter recording, privileged, native, or device-specific code.
