@@ -22,7 +22,7 @@ The DEX disassembly shows:
 .end method
 ```
 
-The returned string is discarded. The string decoder is nevertheless executed during class initialization. The recorded offset is 7003 in the fourth chunk, with 24 characters available for a 110-character request. The read therefore exceeds the available string.
+The returned string is discarded. The string decoder is nevertheless executed during class initialization. The recorded offset is 7003 in the fourth chunk, with 22 UTF-16 code units available for a 110-character request. The read therefore exceeds the available string.
 
 **Static consequence:** when the class initializer is executed against this exact decoded chunk data, it is expected to fail with a string-index exception, and the class will not initialize successfully. This can prevent the Files settings fragment from loading. This has not been confirmed by runtime testing.
 
@@ -43,12 +43,12 @@ These facts place the unresolved calls in the file/recording-management settings
 
 | Key | Caller | Offset | Available | Requested |
 |---|---|---:|---:|---:|
-| `0xffff84a7fe2d47cb` | `FilesSettingsFragment.<clinit>` | 7003 | 24 | 110 |
-| `0xffff84bdfe2d47cb` | `Lo/pg2.a` | 6981 | 46 | 110 |
-| `0xffff84d3fe2d47cb` | `Lo/pg2.a` | 6959 | 68 | 110 |
-| `0xffff84f1fe2d47cb` | `Lo/rg2.a` | 6929 | 98 | 110 |
+| `0xffff84a7fe2d47cb` | `FilesSettingsFragment.<clinit>` | 7003 | 22 | 110 |
+| `0xffff84bdfe2d47cb` | `Lo/pg2.a` | 6981 | 44 | 110 |
+| `0xffff84d3fe2d47cb` | `Lo/pg2.a` | 6959 | 66 | 110 |
+| `0xffff84f1fe2d47cb` | `Lo/rg2.a` | 6929 | 96 | 110 |
 
-All four calls share the same decoder length/mode/table metadata. The fourth encoded chunk has 7,027 UTF-16 characters; the required tails are absent from this chunk.
+All four calls share the same decoder length/mode/table metadata. The fourth encoded chunk declares 7,025 UTF-16 code units in the DEX string header (a previous Python code-point count of 7,027 was not the Java String.length value); the required tails are absent from this chunk.
 
 ## Recovery decision
 
