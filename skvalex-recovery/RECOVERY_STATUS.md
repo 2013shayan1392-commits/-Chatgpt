@@ -72,3 +72,12 @@ Changing any APK byte invalidates its original signature. Without the original d
 - Source-level reconstruction: not started.
 - APK patch: not started.
 - Build/install/runtime verification: not started.
+
+
+## Upstream source audit — 2026-11-14
+
+- The official upstream 3.7.3 release asset metadata reports the exact same SHA-256 and byte size as the supplied APK. The local APK is therefore the official release binary byte-for-byte.
+- The public upstream `master` tree is empty. The `updates` branch contains only update metadata and changelog files, not the Android source/Gradle project.
+- The official 3.7.3 changelog mentions the finishing-notification and auto-rename battery/zero-byte-file fixes; it does not explain the unresolved string calls.
+- The final DEX string chunk declares 7,025 UTF-16 code units. Corrected available lengths for the four failing offsets are 22, 44, 66, and 96 UTF-16 code units (not the earlier Python code-point counts).
+- See [MISSING_COMPONENTS_AND_RECOVERY_SOURCES.md](MISSING_COMPONENTS_AND_RECOVERY_SOURCES.md) for source endpoints and the complete gap inventory.
