@@ -1,92 +1,111 @@
 package org.shayan.skvalexcompanion;
 
+import android.Manifest;
 import android.app.Activity;
-import android.content.Intent;
+import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.database.Cursor;
-import android.media.AudioAttributes;
-import android.media.MediaPlayer;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final int REQ_AUDIO = 4101;
     private static final int REQ_FOLDER = 4102;
+    private static final int REQ_PHONE_STATE = 4103;
+    private static final int REQ_NOTIFICATIONS = 4104;
+    private static final String PREFS = "safe_companion";
+    private static final String STATE_ACTION = "org.shayan.skvalexcompanion.PLAYBACK_STATE";
 
+    private LinearLayout root;
     private TextView selectedFile;
     private TextView selectedFolder;
     private TextView status;
+    private TextView simInfo;
     private Button playButton;
     private Button pauseButton;
     private Button stopButton;
-
     private Uri audioUri;
-    private MediaPlayer player;
-    private boolean preparing;
+    private Uri folderUri;
+    private boolean receiverRegistered;
 
-    @Override
-    protected void onCreate(Bundle state) {
+    private final BroadcastReceiver playbackReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (!STATE_ACTION.equals(intent.getAction())) return;
+            String message = intent.getStringExtra("message");
+            if (status != null && message != null) status.setText(message);
+            boolean playing = intent.getBooleanExtra("playing", false);
+            boolean active = intent.getBooleanExtra("active", false);
+            updateControls(playing, active);
+        }
+    };
+
+    @Override protected void onCreate(Bundle state) {
+        String mode = getPreferences(MODE_PRIVATE).getString("theme", "system");
+        if ("dark".equals(mode)) setTheme(android.R.style.Theme_Material_NoActionBar);
+        else setTheme(android.R.style.Theme_Material_Light_NoActionBar);
         super.onCreate(state);
+        audioUri = savedUri("audio_uri");
+        folderUri = savedUri("folder_uri");
         buildUi();
-        String savedFolder = getPreferences(MODE_PRIVATE).getString("folder_uri", null);
-        if (savedFolder != null) {
-            selectedFolder.setText("پوشهٔ انتخاب‌شده: " + savedFolder);
-        }
-        String savedAudio = getPreferences(MODE_PRIVATE).getString("audio_uri", null);
-        if (savedAudio != null) {
-            audioUri = Uri.parse(savedAudio);
-            selectedFile.setText("فایل قبلی: " + displayName(audioUri));
-        }
-        updateControls(false);
+        refreshSavedLabels();
+        updateControls(false, false);
+        requestNotificationPermissionIfNeeded();
+    }
+
+    private Uri savedUri(String key) {
+        String value = getPreferences(MODE_PRIVATE).getString(key, null);
+        return value == null ? null : Uri.parse(value);
     }
 
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(24), dp(20), dp(24));
+        root.setPadding(dp(18), dp(20), dp(18), dp(24));
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         root.setGravity(Gravity.TOP);
+        int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        boolean dark = "dark".equals(getPreferences(MODE_PRIVATE).getString("theme", "system"))
+                || ("system".equals(getPreferences(MODE_PRIVATE).getString("theme", "system")) && night == Configuration.UI_MODE_NIGHT_YES);
+        root.setBackgroundColor(dark ? 0xFF171717 : 0xFFF7F7F7);
         scroll.addView(root);
-
-        TextView title = new TextView(this);
-        title.setText("مدیریت فایل و پخش محلی");
-        title.setTextSize(23);
+        TextView title = label("مدیریت فایل و پخش محلی", 23, true);
         title.setGravity(Gravity.CENTER);
         root.addView(title, params());
-
-        TextView description = new TextView(this);
-        description.setText("این ابزار فقط فایل صوتی‌ای را پخش می‌کند که خودت انتخاب کرده‌ای. قابلیت ضبط تماس یا دسترسی به صدای تماس در آن وجود ندارد.");
-        description.setTextSize(15);
-        description.setPadding(0, dp(12), 0, dp(16));
+        TextView description = label("فقط فایل‌های صوتی انتخاب‌شده توسط کاربر پخش می‌شوند. این برنامه ضبط تماس یا دریافت صدای مکالمه انجام نمی‌دهد.", 14, false);
+        description.setPadding(0, dp(10), 0, dp(14));
         root.addView(description, params());
 
-        Button chooseAudio = button("انتخاب فایل صوتی");
-        chooseAudio.setOnClickListener(v -> chooseAudio());
-        root.addView(chooseAudio, params());
-
-        selectedFile = new TextView(this);
-        selectedFile.setText("فایلی انتخاب نشده است");
+        addButton("انتخاب فایل صوتی", v -> chooseAudio());
+        selectedFile = label("فایلی انتخاب نشده است", 13, false);
         selectedFile.setTextIsSelectable(true);
-        selectedFile.setPadding(0, dp(10), 0, dp(12));
-        root.addView(selectedFile, params());
+        root.addView(selectedFile, paddedParams());
 
-        Button chooseFolder = button("انتخاب پوشه (دسترسی محدود و مجاز اندروید)");
-        chooseFolder.setOnClickListener(v -> chooseFolder());
-        root.addView(chooseFolder, params());
-
-        selectedFolder = new TextView(this);
-        selectedFolder.setText("پوشه‌ای انتخاب نشده است");
+        addButton("انتخاب پوشه", v -> chooseFolder());
+        addButton("مرور فایل‌های داخل پوشه", v -> showFolderBrowser());
+        selectedFolder = label("پوشه‌ای انتخاب نشده است", 13, false);
         selectedFolder.setTextIsSelectable(true);
-        selectedFolder.setPadding(0, dp(10), 0, dp(12));
-        root.addView(selectedFolder, params());
+        root.addView(selectedFolder, paddedParams());
 
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
@@ -94,20 +113,28 @@ public final class MainActivity extends Activity {
         playButton = button("پخش");
         pauseButton = button("مکث");
         stopButton = button("توقف");
-        controls.addView(playButton, new LinearLayout.LayoutParams(0, dp(52), 1));
-        controls.addView(pauseButton, new LinearLayout.LayoutParams(0, dp(52), 1));
-        controls.addView(stopButton, new LinearLayout.LayoutParams(0, dp(52), 1));
+        controls.addView(playButton, new LinearLayout.LayoutParams(0, dp(50), 1));
+        controls.addView(pauseButton, new LinearLayout.LayoutParams(0, dp(50), 1));
+        controls.addView(stopButton, new LinearLayout.LayoutParams(0, dp(50), 1));
         root.addView(controls, params());
+        playButton.setOnClickListener(v -> sendPlayback(PlaybackService.ACTION_PLAY, audioUri));
+        pauseButton.setOnClickListener(v -> sendPlayback(PlaybackService.ACTION_PAUSE, null));
+        stopButton.setOnClickListener(v -> sendPlayback(PlaybackService.ACTION_STOP, null));
 
-        playButton.setOnClickListener(v -> startPlayback());
-        pauseButton.setOnClickListener(v -> pausePlayback());
-        stopButton.setOnClickListener(v -> stopPlayback());
-
-        status = new TextView(this);
-        status.setTextSize(14);
-        status.setPadding(0, dp(18), 0, 0);
+        status = label("آماده", 14, false);
+        status.setPadding(0, dp(14), 0, dp(8));
         root.addView(status, params());
+        addButton("اطلاعات سیم‌کارت (فقط نمایش)", v -> showSimInformation());
+        simInfo = label("اطلاعات سیم‌کارت هنوز خوانده نشده است.", 13, false);
+        root.addView(simInfo, paddedParams());
+        addButton("تنظیمات", v -> showSettings());
+        addButton("درباره و سازگاری", v -> showAbout());
         setContentView(scroll);
+    }
+
+    private void refreshSavedLabels() {
+        if (selectedFile != null) selectedFile.setText(audioUri == null ? "فایلی انتخاب نشده است" : "فایل ذخیره‌شده: " + displayName(audioUri));
+        if (selectedFolder != null) selectedFolder.setText(folderUri == null ? "پوشه‌ای انتخاب نشده است" : "پوشهٔ ذخیره‌شده: " + folderUri);
     }
 
     private void chooseAudio() {
@@ -124,141 +151,203 @@ public final class MainActivity extends Activity {
         startActivityForResult(intent, REQ_FOLDER);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
-        int grantFlags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
-        try {
-            getContentResolver().takePersistableUriPermission(uri, grantFlags);
-        } catch (SecurityException | IllegalArgumentException ex) {
-            // Some document providers return a temporary grant only; current-session access can still work.
-        }
-
+        int grants = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try { getContentResolver().takePersistableUriPermission(uri, grants); }
+        catch (SecurityException | IllegalArgumentException ignored) { }
         if (requestCode == REQ_AUDIO) {
-            stopPlayback();
             audioUri = uri;
             getPreferences(MODE_PRIVATE).edit().putString("audio_uri", uri.toString()).apply();
-            selectedFile.setText("فایل انتخاب‌شده: " + displayName(uri) + "\n" + uri);
-            status.setText("فایل انتخاب شد. برای شروع، «پخش» را بزن.");
-            updateControls(false);
+            refreshSavedLabels();
+            status.setText("فایل انتخاب شد. برای پخش، دکمهٔ پخش را بزن.");
+            updateControls(false, false);
         } else if (requestCode == REQ_FOLDER) {
+            folderUri = uri;
             getPreferences(MODE_PRIVATE).edit().putString("folder_uri", uri.toString()).apply();
-            selectedFolder.setText("پوشهٔ انتخاب‌شده: " + uri + "\nمجوز دسترسی پایدار در صورت پشتیبانی ارائه‌دهنده ذخیره شد.");
+            refreshSavedLabels();
+            status.setText("پوشه ذخیره شد. اکنون می‌توانی محتویات آن را مرور کنی.");
         }
     }
 
-    private void startPlayback() {
-        if (audioUri == null) {
-            status.setText("ابتدا یک فایل صوتی انتخاب کن.");
+    private void showFolderBrowser() {
+        if (folderUri == null) {
+            status.setText("ابتدا یک پوشه انتخاب کن.");
             return;
         }
-        if (player != null && !preparing) {
-            try {
-                if (!player.isPlaying()) {
-                    player.start();
-                    status.setText("در حال پخش");
-                    updateControls(true);
+        final ArrayList<String> stack = new ArrayList<>();
+        try { stack.add(DocumentsContract.getTreeDocumentId(folderUri)); }
+        catch (Exception ex) { status.setText("شناسهٔ پوشه از ارائه‌دهنده دریافت نشد."); return; }
+        showFolderLevel(stack);
+    }
+
+    private void showFolderLevel(ArrayList<String> stack) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12), dp(8), dp(12), dp(8));
+        TextView path = label("محتویات پوشه", 17, true);
+        panel.addView(path, params());
+        Button up = button("بازگشت به پوشهٔ قبلی");
+        up.setEnabled(stack.size() > 1);
+        up.setOnClickListener(v -> {
+            if (stack.size() > 1) { stack.remove(stack.size() - 1); showFolderLevel(stack); }
+        });
+        panel.addView(up, params());
+        ScrollView listScroll = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        listScroll.addView(list);
+        panel.addView(listScroll, new LinearLayout.LayoutParams(-1, dp(360)));
+        String currentId = stack.get(stack.size() - 1);
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(folderUri, currentId);
+        String[] projection = new String[] {
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE
+        };
+        int count = 0;
+        try (Cursor cursor = getContentResolver().query(childrenUri, projection, null, null,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME + " COLLATE NOCASE ASC")) {
+            if (cursor != null) {
+                int idCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                int nameCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                int mimeCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                int sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE);
+                while (cursor.moveToNext()) {
+                    String id = cursor.getString(idCol);
+                    String name = cursor.getString(nameCol);
+                    String mime = cursor.getString(mimeCol);
+                    long size = sizeCol >= 0 && !cursor.isNull(sizeCol) ? cursor.getLong(sizeCol) : -1;
+                    if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                        Button folder = button("📁  " + name);
+                        folder.setOnClickListener(v -> { stack.add(id); showFolderLevel(stack); });
+                        list.addView(folder, params());
+                        count++;
+                    } else if (mime != null && mime.startsWith("audio/")) {
+                        Button file = button("♫  " + name + (size >= 0 ? "  ·  " + formatBytes(size) : ""));
+                        file.setOnClickListener(v -> {
+                            audioUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, id);
+                            getPreferences(MODE_PRIVATE).edit().putString("audio_uri", audioUri.toString()).apply();
+                            refreshSavedLabels();
+                            status.setText("فایل از پوشه انتخاب شد: " + name);
+                            updateControls(false, false);
+                        });
+                        list.addView(file, params());
+                        count++;
+                    }
                 }
-                return;
-            } catch (IllegalStateException ignored) {
-                releasePlayer();
             }
-        }
-
-        releasePlayer();
-        try {
-            player = new MediaPlayer();
-            player.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build());
-            player.setDataSource(this, audioUri);
-            preparing = true;
-            updateControls(false);
-            status.setText("در حال آماده‌سازی فایل…");
-            player.setOnPreparedListener(mp -> {
-                preparing = false;
-                mp.start();
-                status.setText("در حال پخش: " + displayName(audioUri));
-                updateControls(true);
-            });
-            player.setOnCompletionListener(mp -> {
-                status.setText("پخش به پایان رسید.");
-                updateControls(false);
-            });
-            player.setOnErrorListener((mp, what, extra) -> {
-                preparing = false;
-                status.setText("پخش این فایل ناموفق بود یا قالب آن پشتیبانی نمی‌شود.");
-                releasePlayer();
-                updateControls(false);
-                return true;
-            });
-            player.prepareAsync();
         } catch (Exception ex) {
-            preparing = false;
-            releasePlayer();
-            status.setText("فایل قابل دسترسی نیست. ممکن است مجوز آن لغو شده یا فایل حذف شده باشد.");
-            updateControls(false);
+            TextView error = label("این ارائه‌دهنده امکان فهرست‌کردن محتویات پوشه را نداد. می‌توانی فایل را با «انتخاب فایل صوتی» جداگانه انتخاب کنی.", 13, false);
+            list.addView(error, params());
         }
+        if (count == 0 && list.getChildCount() == 0) list.addView(label("فایل صوتی یا زیرپوشه‌ای در این مسیر پیدا نشد.", 13, false), params());
+        new AlertDialog.Builder(this).setTitle("مرور پوشه").setView(panel)
+                .setNegativeButton("بستن", null).show();
     }
 
-    private void pausePlayback() {
-        if (player == null || preparing) return;
+    private String formatBytes(long value) {
+        if (value < 1024) return value + " B";
+        if (value < 1024L * 1024) return String.format(java.util.Locale.getDefault(), "%.1f KB", value / 1024.0);
+        return String.format(java.util.Locale.getDefault(), "%.1f MB", value / (1024.0 * 1024.0));
+    }
+
+    private void sendPlayback(String action, Uri uri) {
+        Intent intent = new Intent(this, PlaybackService.class).setAction(action);
+        if (uri != null) intent.putExtra(PlaybackService.EXTRA_URI, uri.toString());
         try {
-            if (player.isPlaying()) {
-                player.pause();
-                status.setText("پخش متوقف موقت شد.");
-                updateControls(false);
-            }
-        } catch (IllegalStateException ex) {
-            status.setText("وضعیت پخش در دسترس نیست.");
+            if (Build.VERSION.SDK_INT >= 26 && PlaybackService.ACTION_PLAY.equals(action)) startForegroundService(intent);
+            else startService(intent);
+        } catch (Exception ex) {
+            status.setText("شروع پخش پس‌زمینه ممکن نشد: " + ex.getClass().getSimpleName());
         }
     }
 
-    private void stopPlayback() {
-        if (player != null) {
-            try {
-                if (player.isPlaying()) player.stop();
-            } catch (IllegalStateException ignored) {
-            }
-            releasePlayer();
-        }
-        preparing = false;
-        updateControls(false);
-    }
-
-    private void releasePlayer() {
-        if (player != null) {
-            try { player.reset(); } catch (IllegalStateException ignored) {}
-            try { player.release(); } catch (IllegalStateException ignored) {}
-            player = null;
-        }
-        preparing = false;
-    }
-
-    private void updateControls(boolean playing) {
+    private void updateControls(boolean playing, boolean active) {
         if (playButton == null) return;
-        playButton.setEnabled(audioUri != null && !playing && !preparing);
-        pauseButton.setEnabled(playing);
-        stopButton.setEnabled(player != null || preparing);
+        playButton.setEnabled(audioUri != null && !playing);
+        pauseButton.setEnabled(active && playing);
+        stopButton.setEnabled(active);
     }
 
-    private String displayName(Uri uri) {
-        if (uri == null) return "نامشخص";
-        Cursor cursor = null;
-        try {
-            cursor = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null);
-            if (cursor != null && cursor.moveToFirst()) {
-                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (index >= 0) return cursor.getString(index);
-            }
-        } catch (Exception ignored) {
-        } finally {
-            if (cursor != null) cursor.close();
+    private void showSimInformation() {
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, REQ_PHONE_STATE);
+            simInfo.setText("برای نمایش نام اپراتور و شمارهٔ شیار سیم‌کارت، مجوز اطلاعات تلفن لازم است. این برنامه تماس برقرار نمی‌کند.");
+            return;
         }
-        return uri.getLastPathSegment() == null ? uri.toString() : uri.getLastPathSegment();
+        renderSimInformation();
+    }
+
+    private void renderSimInformation() {
+        if (Build.VERSION.SDK_INT < 22) { simInfo.setText("اطلاعات سیم‌کارت در این نسخهٔ اندروید پشتیبانی نمی‌شود."); return; }
+        try {
+            SubscriptionManager manager = (SubscriptionManager) getSystemService(TELEPHONY_SUBSCRIPTION_SERVICE);
+            List<SubscriptionInfo> items = manager == null ? null : manager.getActiveSubscriptionInfoList();
+            if (items == null || items.isEmpty()) { simInfo.setText("سیم‌کارت فعالی از طریق API عمومی اندروید گزارش نشد."); return; }
+            StringBuilder result = new StringBuilder();
+            for (SubscriptionInfo item : items) {
+                if (result.length() > 0) result.append("\n\n");
+                result.append("شیار ").append(item.getSimSlotIndex() + 1)
+                        .append("\nاپراتور: ").append(item.getCarrierName())
+                        .append("\nنام نمایشی: ").append(item.getDisplayName())
+                        .append("\nنوع: ").append(item.isEmbedded() ? "eSIM" : "سیم‌کارت فیزیکی");
+            }
+            simInfo.setText(result.toString());
+        } catch (SecurityException ex) {
+            simInfo.setText("سیستم اجازهٔ خواندن اطلاعات سیم‌کارت را نداد.");
+        } catch (Exception ex) {
+            simInfo.setText("اطلاعات سیم‌کارت در این دستگاه در دسترس نیست.");
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_PHONE_STATE && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) renderSimInformation();
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        }
+    }
+
+    private void showSettings() {
+        String[] themes = {"همگام با سیستم", "روشن", "تیره"};
+        String current = getPreferences(MODE_PRIVATE).getString("theme", "system");
+        int selected = "light".equals(current) ? 1 : ("dark".equals(current) ? 2 : 0);
+        new AlertDialog.Builder(this).setTitle("نمایش")
+                .setSingleChoiceItems(themes, selected, (dialog, which) -> {
+                    String value = which == 1 ? "light" : (which == 2 ? "dark" : "system");
+                    getPreferences(MODE_PRIVATE).edit().putString("theme", value).apply();
+                    dialog.dismiss();
+                    recreate();
+                }).setNegativeButton("بستن", null).show();
+        // Saved-file and folder cleanup is available from the separate cleanup dialog.
+    }
+
+    private void showAbout() {
+        new AlertDialog.Builder(this).setTitle("دربارهٔ برنامه")
+                .setMessage("Safe Companion یک ابزار مستقل و غیرضبطی است. پخش فایل‌های صوتی انتخاب‌شده، مرور SAF، نمایش اطلاعات پایهٔ سیم‌کارت و اعلان پخش را ارائه می‌کند. حداقل نسخه: Android 10 (API 29). طراحی برای Android 10 تا 16؛ نتیجهٔ نهایی به سازنده و ارائه‌دهندهٔ فایل بستگی دارد.")
+                .setPositiveButton("باشه", null).show();
+    }
+
+    private void addButton(String text, View.OnClickListener listener) {
+        Button b = button(text);
+        b.setOnClickListener(listener);
+        root.addView(b, params());
+    }
+
+    private TextView label(String text, int size, boolean bold) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(size);
+        t.setTextColor(0xFF202124);
+        if (bold) t.setTypeface(null, android.graphics.Typeface.BOLD);
+        return t;
     }
 
     private Button button(String text) {
@@ -269,18 +358,42 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams params() {
-        return new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
+        return new LinearLayout.LayoutParams(-1, -2);
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+    private LinearLayout.LayoutParams paddedParams() {
+        LinearLayout.LayoutParams p = params();
+        p.topMargin = dp(8);
+        p.bottomMargin = dp(12);
+        return p;
     }
 
-    @Override
-    protected void onDestroy() {
-        releasePlayer();
-        super.onDestroy();
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    private String displayName(Uri uri) {
+        if (uri == null) return "نامشخص";
+        try (Cursor cursor = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) return cursor.getString(index);
+            }
+        } catch (Exception ignored) { }
+        return uri.getLastPathSegment() == null ? uri.toString() : uri.getLastPathSegment();
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        IntentFilter filter = new IntentFilter(STATE_ACTION);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(playbackReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(playbackReceiver, filter);
+        receiverRegistered = true;
+    }
+
+    @Override protected void onStop() {
+        if (receiverRegistered) {
+            try { unregisterReceiver(playbackReceiver); } catch (IllegalArgumentException ignored) { }
+            receiverRegistered = false;
+        }
+        super.onStop();
     }
 }
