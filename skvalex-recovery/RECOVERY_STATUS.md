@@ -81,3 +81,13 @@ Changing any APK byte invalidates its original signature. Without the original d
 - The official 3.7.3 changelog mentions the finishing-notification and auto-rename battery/zero-byte-file fixes; it does not explain the unresolved string calls.
 - The final DEX string chunk declares 7,025 UTF-16 code units. Corrected available lengths for the four failing offsets are 22, 44, 66, and 96 UTF-16 code units (not the earlier Python code-point counts).
 - See [MISSING_COMPONENTS_AND_RECOVERY_SOURCES.md](MISSING_COMPONENTS_AND_RECOVERY_SOURCES.md) for source endpoints and the complete gap inventory.
+
+
+## Upstream version scan and CI confirmation — 2026-11-14
+
+- Scanned official releases 3.7.4, 3.7.5, and 3.7.6. They are separate APK binaries with separate hashes; none supplies the missing source/build project.
+- The official public master tree remains empty; updates remains metadata/changelog-only.
+- Do not transplant later-version binary fragments into 3.7.3 without source-level equivalence evidence.
+- GitHub Actions run 43605120585 completed successfully. Job verify-tooling and the recovery-tool unit-test step both report success.
+- Canonical missing-string lengths remain 22, 44, 66, and 96 UTF-16 code units. The older stage-19 narrative's 24/46/68/98 values are superseded.
+- No application source patch or APK build was started: source/build inputs and official signing authorization are unavailable. See [UPSTREAM_RELEASE_SCAN.md](UPSTREAM_RELEASE_SCAN.md).
