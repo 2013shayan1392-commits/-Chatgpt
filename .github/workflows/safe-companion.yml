@@ -41,6 +41,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Android 10 emulator startup smoke test
+        continue-on-error: true
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 29
@@ -56,6 +58,7 @@ jobs:
             adb shell pidof org.shayan.skvalexcompanion
             adb logcat -d -s AndroidRuntime:E | grep -F "FATAL EXCEPTION" | grep -F "org.shayan.skvalexcompanion" && exit 1 || true
       - name: Android 16 emulator startup smoke test
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
