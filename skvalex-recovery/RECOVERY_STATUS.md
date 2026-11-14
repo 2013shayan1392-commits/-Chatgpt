@@ -43,7 +43,7 @@ Additional evidence narrows the context:
 - Both listener classes retain a reference to FilesSettingsFragment and are instantiated by its preference setup.
 - Nearby recoverable preference identifiers include `filename_pattern`, `rename_all_files`, `rename_files_automatically`, `trash_max_age`, `delete_short_recordings`, `max_number_of_files`, `max_total_size_of_files`, `max_age_of_recordings`, `folder`, and `cleanup_uploaded_only`.
 - All four decoder calls request 110 characters and share the same mode/flag and table parameter.
-- The fourth encoded chunk contains 7,027 UTF-16 characters. The four offsets leave 24, 46, 68, and 98 characters respectively.
+- The fourth encoded chunk contains 7,027 UTF-16 characters. The four offsets leave 22, 44, 66, and 96 UTF-16 code units respectively.
 - The FilesSettingsFragment class initializer discards the returned string. A no-op correction is plausible, but its original intent and safety are not yet proven.
 
 No replacement should be made until exact expected values and call contracts are established independently. Guessed strings must not be silently substituted. See [STRING_GAP_ANALYSIS.md](STRING_GAP_ANALYSIS.md) and [RECOVERY_CHECKPOINT_2026-11-14.md](RECOVERY_CHECKPOINT_2026-11-14.md).
