@@ -14,8 +14,11 @@ import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
 
@@ -32,6 +35,7 @@ public final class PlaybackService extends Service {
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
     private AudioAttributes audioAttributes;
+    private MediaSession mediaSession;
     private boolean preparing;
     private boolean playing;
     private boolean hasAudioFocus;
@@ -45,7 +49,8 @@ public final class PlaybackService extends Service {
     private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction()) && player != null) {
-                pauseForExternalEvent("پخش به‌دلیل جداشدن هدفون متوقف شد.");
+                resumeAfterFocusGain = false;
+                pausePlayback("پخش به‌دلیل جداشدن هدفون متوقف شد.");
             }
         }
     };
@@ -57,8 +62,30 @@ public final class PlaybackService extends Service {
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build();
+        createMediaSession();
         createNotificationChannel();
         registerNoisyReceiver();
+    }
+
+    private void createMediaSession() {
+        mediaSession = new MediaSession(this, "SafeCompanionPlayback");
+        mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS
+                | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+        mediaSession.setCallback(new MediaSession.Callback() {
+            @Override public void onPlay() { resumePlayback(); }
+            @Override public void onPause() { pausePlayback("پخش متوقف موقت شد."); }
+            @Override public void onStop() { stopPlayback(); }
+            @Override public void onSeekTo(long position) {
+                if (player == null || preparing) return;
+                try {
+                    player.seekTo((int) Math.max(0, Math.min(position, player.getDuration())));
+                    updateMediaSessionState();
+                } catch (IllegalStateException ignored) { }
+            }
+            @Override public void onMediaButtonEvent(Intent mediaButtonIntent) {
+                super.onMediaButtonEvent(mediaButtonIntent);
+            }
+        });
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -109,12 +136,15 @@ public final class PlaybackService extends Service {
             updateNotification("در حال آماده‌سازی…", false);
             player.setOnPreparedListener(mp -> {
                 preparing = false;
-                startPreparedPlayer();
+                updateMediaMetadata();
+                resumePlayback();
             });
             player.setOnCompletionListener(mp -> {
                 playing = false;
                 preparing = false;
                 publishState("پخش به پایان رسید.", false, false);
+                updateMediaSessionState();
+                if (mediaSession != null) mediaSession.setActive(false);
                 stopForeground(true);
                 releasePlayer();
                 stopSelf();
@@ -129,16 +159,20 @@ public final class PlaybackService extends Service {
         }
     }
 
-    private void startPreparedPlayer() {
-        if (player == null || !requestAudioFocus()) {
-            fail("دسترسی صوتی سیستم در دسترس نیست؛ دوباره تلاش کن.");
+    private void resumePlayback() {
+        if (player == null || preparing) return;
+        if (!requestAudioFocus()) {
+            publishState("صدای سیستم فعلاً در اختیار برنامهٔ دیگری است.", false, true);
+            updateNotification("در انتظار دسترسی صوتی…", false);
             return;
         }
         try {
+            if (!player.isPlaying()) player.start();
             player.setVolume(1.0f, 1.0f);
-            player.start();
             playing = true;
+            focusDucked = false;
             resumeAfterFocusGain = false;
+            if (mediaSession != null) mediaSession.setActive(true);
             publishState("در حال پخش: " + currentName, true, true);
             updateNotification("در حال پخش: " + currentName, true);
         } catch (IllegalStateException ex) {
@@ -182,11 +216,11 @@ public final class PlaybackService extends Service {
         if (player == null) return;
         if (change == AudioManager.AUDIOFOCUS_LOSS) {
             resumeAfterFocusGain = false;
-            pauseForExternalEvent("پخش به‌دلیل استفادهٔ برنامه‌ای دیگر از صدا متوقف شد.");
+            pausePlayback("پخش به‌دلیل استفادهٔ برنامه‌ای دیگر از صدا متوقف شد.");
             abandonAudioFocus();
         } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
             resumeAfterFocusGain = playing;
-            pauseForExternalEvent("پخش موقتاً برای صدای دیگری مکث شد.");
+            pausePlayback("پخش موقتاً برای صدای دیگری مکث شد.");
         } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
             if (playing) {
                 try {
@@ -199,47 +233,24 @@ public final class PlaybackService extends Service {
                 try { player.setVolume(1.0f, 1.0f); } catch (IllegalStateException ignored) { }
                 focusDucked = false;
             }
-            if (resumeAfterFocusGain && player != null) {
+            if (resumeAfterFocusGain) {
                 resumeAfterFocusGain = false;
-                try {
-                    player.start();
-                    playing = true;
-                    publishState("در حال پخش: " + currentName, true, true);
-                    updateNotification("در حال پخش: " + currentName, true);
-                } catch (IllegalStateException ex) {
-                    fail("ادامهٔ پخش پس از بازگشت صدای سیستم ممکن نشد.");
-                }
+                resumePlayback();
             }
         }
     }
 
     private void togglePlayback() {
         if (player == null || preparing) return;
-        try {
-            if (player.isPlaying()) {
-                player.pause();
-                playing = false;
-                resumeAfterFocusGain = false;
-                publishState("پخش متوقف موقت شد.", false, true);
-                updateNotification("مکث: " + currentName, false);
-            } else {
-                if (!requestAudioFocus()) {
-                    publishState("صدای سیستم فعلاً در اختیار برنامهٔ دیگری است.", false, true);
-                    return;
-                }
-                player.setVolume(1.0f, 1.0f);
-                player.start();
-                playing = true;
-                focusDucked = false;
-                publishState("در حال پخش: " + currentName, true, true);
-                updateNotification("در حال پخش: " + currentName, true);
-            }
-        } catch (IllegalStateException ex) {
-            fail("وضعیت پخش دیگر معتبر نیست.");
+        if (playing) {
+            resumeAfterFocusGain = false;
+            pausePlayback("پخش متوقف موقت شد.");
+        } else {
+            resumePlayback();
         }
     }
 
-    private void pauseForExternalEvent(String message) {
+    private void pausePlayback(String message) {
         if (player == null || preparing) return;
         try {
             if (player.isPlaying()) player.pause();
@@ -256,6 +267,8 @@ public final class PlaybackService extends Service {
         playing = false;
         preparing = false;
         publishState("پخش متوقف شد.", false, false);
+        updateMediaSessionState();
+        if (mediaSession != null) mediaSession.setActive(false);
         stopForeground(true);
         stopSelf();
     }
@@ -265,6 +278,8 @@ public final class PlaybackService extends Service {
         playing = false;
         preparing = false;
         publishState(message, false, false);
+        updateMediaSessionState();
+        if (mediaSession != null) mediaSession.setActive(false);
         stopForeground(true);
         stopSelf();
     }
@@ -278,6 +293,45 @@ public final class PlaybackService extends Service {
         }
         preparing = false;
         playing = false;
+    }
+
+    private void updateMediaMetadata() {
+        if (mediaSession == null || player == null) return;
+        try {
+            android.media.MediaMetadata metadata = new android.media.MediaMetadata.Builder()
+                    .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, currentName)
+                    .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, player.getDuration())
+                    .build();
+            mediaSession.setMetadata(metadata);
+        } catch (IllegalStateException ignored) { }
+    }
+
+    private void updateMediaSessionState() {
+        if (mediaSession == null) return;
+        long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP
+                | PlaybackState.ACTION_SEEK_TO;
+        int state = PlaybackState.STATE_STOPPED;
+        long position = 0;
+        float speed = 0f;
+        if (player != null && !preparing) {
+            try {
+                position = Math.max(0, player.getCurrentPosition());
+                if (playing) {
+                    state = PlaybackState.STATE_PLAYING;
+                    speed = 1f;
+                } else {
+                    state = PlaybackState.STATE_PAUSED;
+                }
+            } catch (IllegalStateException ignored) { }
+        } else if (preparing) {
+            state = PlaybackState.STATE_BUFFERING;
+        }
+        PlaybackState playbackState = new PlaybackState.Builder()
+                .setActions(actions)
+                .setState(state, position, speed)
+                .build();
+        mediaSession.setPlaybackState(playbackState);
     }
 
     private void registerNoisyReceiver() {
@@ -297,6 +351,7 @@ public final class PlaybackService extends Service {
         state.putExtra("playing", isPlaying);
         state.putExtra("active", active);
         sendBroadcast(state);
+        updateMediaSessionState();
     }
 
     private void createNotificationChannel() {
@@ -319,8 +374,10 @@ public final class PlaybackService extends Service {
         PendingIntent stop = PendingIntent.getService(this, 702,
                 new Intent(this, PlaybackService.class).setAction(ACTION_STOP),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID);
+        Notification.MediaStyle style = new Notification.MediaStyle()
+                .setMediaSession(mediaSession.getSessionToken())
+                .setShowActionsInCompactView(0, 1);
         builder.setSmallIcon(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play)
                 .setContentTitle(currentName)
                 .setContentText(text)
@@ -328,7 +385,9 @@ public final class PlaybackService extends Service {
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
                 .setCategory(Notification.CATEGORY_TRANSPORT)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setOngoing(true)
+                .setStyle(style)
                 .addAction(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
                         isPlaying ? "مکث" : "ادامه", toggle)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "توقف", stop);
@@ -356,6 +415,11 @@ public final class PlaybackService extends Service {
         if (noisyReceiverRegistered) {
             try { unregisterReceiver(noisyReceiver); } catch (IllegalArgumentException ignored) { }
             noisyReceiverRegistered = false;
+        }
+        if (mediaSession != null) {
+            mediaSession.setActive(false);
+            mediaSession.release();
+            mediaSession = null;
         }
         super.onDestroy();
     }
