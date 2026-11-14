@@ -410,6 +410,7 @@ public final class MainActivity extends Activity {
         return uri.getLastPathSegment() == null ? uri.toString() : uri.getLastPathSegment();
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override protected void onStart() {
         super.onStart();
         IntentFilter filter = new IntentFilter(STATE_ACTION);
