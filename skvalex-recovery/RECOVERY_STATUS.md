@@ -100,3 +100,15 @@ Changing any APK byte invalidates its original signature. Without the original d
 - Local test result: 5/5 passed.
 - This establishes a reproducible diagnostic gate; it does not yet replace application code or resolve the three consumed missing strings.
 - No APK/Dex patch or APK build has been performed.
+
+
+## Compatibility fallback analysis — audits 20 and 21
+
+- The four unresolved decoder calls were narrowed by instruction-level DEX analysis.
+- The class-initializer call's return value is discarded; removing only that call is a minimal candidate fix.
+- The two Lo/pg2 values are used by the file/folder-picker fragment flow: one is placed in the Bundle under fragment_tag, and the other is forwarded as the fragment transaction tag.
+- The Lo/rg2 value is forwarded as the transaction tag for Lo/mj0, whose dialog queries Android SubscriptionManager and active SIM subscriptions.
+- Deterministic fallback identifiers are documented in FILES_SETTINGS_COMPATIBILITY_FALLBACKS_AUDIT_20.md; they are not claimed to be the original values and have not been inserted into the APK.
+- Native AudioRecord/codec/sample-rate-conversion components are coupled to media behavior. No guessed replacement is supplied; see NATIVE_DEPENDENCY_RECOVERY_BOUNDARIES_AUDIT_21.md.
+- No APK build or runtime test has been completed. The original source/build configuration and official signing key remain unavailable.
+- No automated recorder-APK packaging workflow is present in the recovery branch.
