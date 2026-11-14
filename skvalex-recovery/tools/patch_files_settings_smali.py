@@ -37,7 +37,7 @@ CASES = (
         "replacement": "skvalex.files.sim-selection.dialog",
         "kind": "string-result",
     },
-}
+)
 
 
 def find_smali(root: Path, descriptor: str) -> Path:
@@ -52,11 +52,19 @@ def find_smali(root: Path, descriptor: str) -> Path:
 
 def method_span(text: str, signature: str) -> tuple[int, int]:
     lines = text.splitlines(keepends=True)
-    starts = [i for i, line in enumerate(lines) if line.startswith(".method ") and signature in line]
+    starts = [
+        i for i, line in enumerate(lines)
+        if line.startswith(".method ") and signature in line
+    ]
     if len(starts) != 1:
-        raise RuntimeError(f"Expected one method containing {signature}; found {len(starts)}")
+        raise RuntimeError(
+            f"Expected one method containing {signature}; found {len(starts)}"
+        )
     start = starts[0]
-    ends = [i for i in range(start + 1, len(lines)) if lines[i].strip() == ".end method"]
+    ends = [
+        i for i in range(start + 1, len(lines))
+        if lines[i].strip() == ".end method"
+    ]
     if not ends:
         raise RuntimeError(f"Missing .end method for {signature}")
     return start, ends[0] + 1
@@ -72,23 +80,26 @@ def patch_case(root: Path, case: dict) -> Path:
 
     if case["kind"] == "discarded-return":
         pattern = re.compile(
-            rf"(?m)^(?P<indent>\\s*)const-wide\\s+(?P<reg>v\\d+),\\s*-0x{key}L\\s*\\n"
-            rf"\\s*invoke-static\\s*\\{{\\s*(?P=reg),\\s*v\\d+\\s*\\}},\\s*{re.escape(CALL)}\\s*\\n"
+            rf"(?m)^(?P<indent>\s*)const-wide\s+(?P<reg>v\d+),\s*-0x{key}L\s*\n"
+            rf"\s*invoke-static\s*\{{\s*(?P=reg),\s*v\d+\s*\}},\s*{re.escape(CALL)}\s*\n"
         )
         replacement = ""
     else:
         pattern = re.compile(
-            rf"(?m)^(?P<indent>\\s*)const-wide\\s+(?P<reg>v\\d+),\\s*-0x{key}L\\s*\\n"
-            rf"\\s*invoke-static\\s*\\{{\\s*(?P=reg),\\s*v\\d+\\s*\\}},\\s*{re.escape(CALL)}\\s*\\n"
-            rf"\\s*move-result-object\\s+(?P=reg)\\s*\\n"
+            rf"(?m)^(?P<indent>\s*)const-wide\s+(?P<reg>v\d+),\s*-0x{key}L\s*\n"
+            rf"\s*invoke-static\s*\{{\s*(?P=reg),\s*v\d+\s*\}},\s*{re.escape(CALL)}\s*\n"
+            rf"\s*move-result-object\s+(?P=reg)\s*\n"
         )
         value = case["replacement"].replace("\\", "\\\\").replace('"', '\\"')
-        replacement = lambda m: f'{m.group("indent")}const-string {m.group("reg")}, "{value}"\\n'
+        replacement = lambda m: (
+            f'{m.group("indent")}const-string {m.group("reg")}, "{value}"\n'
+        )
 
     updated, count = pattern.subn(replacement, block)
     if count != 1:
         raise RuntimeError(
-            f"{case['descriptor']} {case['method']} key 0x{key}: expected one exact sequence, found {count}"
+            f"{case['descriptor']} {case['method']} key 0x{key}: "
+            f"expected one exact sequence, found {count}"
         )
     lines[start:end] = [updated]
     path.write_text("".join(lines), encoding="utf-8")
@@ -97,7 +108,9 @@ def patch_case(root: Path, case: dict) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("decoded_apk", type=Path, help="apktool decoded project directory")
+    parser.add_argument(
+        "decoded_apk", type=Path, help="apktool decoded project directory"
+    )
     args = parser.parse_args()
     root = args.decoded_apk.resolve()
     if not root.is_dir():
@@ -118,7 +131,9 @@ def main() -> None:
         lines = text.splitlines(keepends=True)
         start, end = method_span(text, signature)
         if CALL in "".join(lines[start:end]):
-            raise RuntimeError(f"Unresolved decoder call remains in {descriptor} {signature}")
+            raise RuntimeError(
+                f"Unresolved decoder call remains in {descriptor} {signature}"
+            )
 
     for path in sorted(set(touched)):
         print(f"patched: {path.relative_to(root)}")
