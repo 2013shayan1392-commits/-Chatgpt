@@ -194,7 +194,7 @@ public final class PlaybackService extends Service {
                 .setOngoing(true)
                 .addAction(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
                         actionLabel, toggle)
-                .addAction(android.R.drawable.ic_media_stop, "توقف", stop);
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "توقف", stop);
         return builder.build();
     }
 
