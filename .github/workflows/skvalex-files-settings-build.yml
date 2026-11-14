@@ -1,0 +1,85 @@
+name: Build SKVALEX 3.7.3 Files-settings compatibility APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout recovery workspace
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager "build-tools;36.0.0"
+          echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Download official 3.7.3 baseline
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/skvalex/callrecorder/releases/download/3.7.3/CallRecorder_v.3.7.3.apk" \
+            --output original.apk
+          echo "db6c9a2c45b7420051fe26f336ae6c2cc7d9c8a2633bccf86bb9f230c9052684  original.apk" | sha256sum --check
+
+      - name: Download apktool
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar" \
+            --output apktool.jar
+
+      - name: Decode original APK
+        run: java -jar apktool.jar d --force --use-aapt2 original.apk --output decoded
+
+      - name: Run patcher tests
+        run: python3 -m unittest discover -s skvalex-recovery/tests -p "test_patch_files_settings_smali.py" -v
+
+      - name: Apply narrow Files-settings fallbacks
+        run: python3 skvalex-recovery/tools/patch_files_settings_smali.py decoded
+
+      - name: Rebuild derived APK
+        run: java -jar apktool.jar b --use-aapt2 decoded --output unsigned.apk
+
+      - name: Align APK
+        run: zipalign -f -p 4 unsigned.apk aligned.apk
+
+      - name: Create one-off test signing key
+        run: |
+          keytool -genkeypair -v -keystore test-signing.jks \
+            -storepass changeit -keypass changeit -alias recovery-test \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=SKVALEX Recovery Test,O=Local Test,C=ZZ"
+
+      - name: Sign derived APK
+        run: |
+          apksigner sign --ks test-signing.jks --ks-key-alias recovery-test \
+            --ks-pass pass:changeit --key-pass pass:changeit \
+            --out skvalex-3.7.3-files-settings-test.apk aligned.apk
+          apksigner verify --verbose --print-certs skvalex-3.7.3-files-settings-test.apk
+
+      - name: Record artifact hashes
+        run: |
+          sha256sum original.apk skvalex-3.7.3-files-settings-test.apk | tee SHA256SUMS.txt
+
+      - name: Upload test APK and build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: skvalex-3.7.3-files-settings-test
+          path: |
+            skvalex-3.7.3-files-settings-test.apk
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
