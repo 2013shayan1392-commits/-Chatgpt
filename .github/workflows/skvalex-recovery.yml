@@ -1,0 +1,27 @@
+name: SKVALEX recovery checks
+
+on:
+  push:
+    branches: [ skvalex-recovery ]
+    paths:
+      - "skvalex-recovery/**"
+      - ".github/workflows/skvalex-recovery.yml"
+  pull_request:
+    paths:
+      - "skvalex-recovery/**"
+      - ".github/workflows/skvalex-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run recovery-tool unit tests
+        run: python -m unittest discover -s skvalex-recovery/tests -v
