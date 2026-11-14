@@ -2,6 +2,12 @@ name: Build SKVALEX 3.7.3 Files-settings compatibility APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [skvalex-recovery]
+    paths:
+      - '.github/workflows/skvalex-files-settings-build.yml'
+      - 'skvalex-recovery/tools/patch_files_settings_smali.py'
+      - 'skvalex-recovery/tests/test_patch_files_settings_smali.py'
 
 permissions:
   contents: read
