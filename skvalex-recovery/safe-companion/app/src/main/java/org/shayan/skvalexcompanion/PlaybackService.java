@@ -21,6 +21,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 
 public final class PlaybackService extends Service {
     public static final String ACTION_PLAY = "org.shayan.skvalexcompanion.action.PLAY";
@@ -336,7 +337,7 @@ public final class PlaybackService extends Service {
         }
         PlaybackState playbackState = new PlaybackState.Builder()
                 .setActions(actions)
-                .setState(state, position, speed)
+                .setState(state, position, speed, SystemClock.elapsedRealtime())
                 .build();
         mediaSession.setPlaybackState(playbackState);
     }
