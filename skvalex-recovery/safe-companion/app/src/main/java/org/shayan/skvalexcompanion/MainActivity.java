@@ -417,6 +417,7 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(playbackReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(playbackReceiver, filter);
         receiverRegistered = true;
+        sendPlayback(PlaybackService.ACTION_QUERY_STATE, null);
     }
 
     @Override protected void onStop() {
