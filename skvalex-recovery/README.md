@@ -22,6 +22,16 @@ A separate static-recovery workspace for SKVALEX Call Recorder 3.7.3.
 - Analysis so far: static DEX/resource/native inspection
 - Runtime/device testing: not performed
 
+## Recovery diagnostics
+
+The UTF-16 string-gap contract checker records the four known 3.7.3 decoder call sites without inventing missing values:
+
+```bash
+python3 skvalex-recovery/tools/check_string_gap_contract.py
+```
+
+Its unit tests run with the workspace test suite. This checker is diagnostic tooling only; it does not patch the APK.
+
 ## Read-only baseline verification
 
 The original APK is intentionally not stored in this public repository. After obtaining the same original file, run:
