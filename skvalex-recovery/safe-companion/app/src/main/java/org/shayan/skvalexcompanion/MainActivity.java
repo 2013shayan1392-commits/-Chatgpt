@@ -276,8 +276,9 @@ public final class MainActivity extends Activity {
 
     private void updateControls(boolean playing, boolean active) {
         if (playButton == null) return;
-        playButton.setEnabled(audioUri != null && !playing);
-        pauseButton.setEnabled(active && playing);
+        playButton.setEnabled(audioUri != null && !active);
+        pauseButton.setText(playing ? "مکث" : "ادامه");
+        pauseButton.setEnabled(active);
         stopButton.setEnabled(active);
     }
 
