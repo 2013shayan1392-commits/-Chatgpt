@@ -8,6 +8,10 @@ on:
       - '.github/workflows/safe-companion.yml'
   workflow_dispatch:
 
+concurrency:
+  group: safe-companion-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
