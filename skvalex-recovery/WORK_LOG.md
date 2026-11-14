@@ -36,3 +36,15 @@ Continue with non-capture static analysis of the two listener classes, resource 
 - Updated the workspace README with exact local verification commands and current recovery boundaries.
 - The CI workflow is configured to run on changes to this workspace; its remote run result has not yet been confirmed in this session.
 - No application APK build job was added because reconstructed SKVALEX source is not available and the original binary must not be repackaged as if it were a source build.
+
+
+## 2026-11-14 — Missing-source and official-release audit
+
+- Queried the official upstream GitHub release metadata for tag 3.7.3.
+- Confirmed the official asset is `CallRecorder_v.3.7.3.apk`, 16,021,782 bytes, SHA-256 `db6c9a2c45b7420051fe26f336ae6c2cc7d9c8a2633bccf86bb9f230c9052684`.
+- Confirmed the local `base(3).apk` has the same byte size and SHA-256. The supplied APK is byte-for-byte the official release asset; the four missing-string edge cases are not caused by local transfer damage.
+- Inspected the public upstream repository: the `master` branch has an empty tree; the `updates` branch contains update metadata and changelog JSON, not the app's Gradle/source project.
+- Retrieved the official 3.7.3 changelog metadata. It documents a finishing-notification fix and an automatic-renaming battery/zero-byte-file fix, but does not describe the four unresolved decoder outputs.
+- Rechecked the DEX string-table header. The final string declares 7,025 UTF-16 code units. A previous 7,027 Python code-point count was not equivalent to Java String.length(); corrected the remaining lengths to 22, 44, 66, and 96 UTF-16 code units.
+- Added `MISSING_COMPONENTS_AND_RECOVERY_SOURCES.md` to distinguish located evidence from unavailable source/build/signing/runtime inputs.
+- No APK bytes or recording/capture code were modified.
