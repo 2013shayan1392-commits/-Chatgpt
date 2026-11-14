@@ -28,3 +28,11 @@ The repository now contains a recovery workspace, evidence notes, and a tested r
 ## Next checkpoint
 
 Continue with non-capture static analysis of the two listener classes, resource references, and caller contracts. Do not alter recording, privileged, native, or device-specific code.
+
+
+## 2026-11-14 — GitHub project wiring
+
+- Added a GitHub Actions workflow for automated unit tests of the recovery tooling.
+- Updated the workspace README with exact local verification commands and current recovery boundaries.
+- The CI workflow is configured to run on changes to this workspace; its remote run result has not yet been confirmed in this session.
+- No application APK build job was added because reconstructed SKVALEX source is not available and the original binary must not be repackaged as if it were a source build.
