@@ -82,3 +82,18 @@ https://raw.githubusercontent.com/skvalex/callrecorder/updates/changelog/9024000
 The exact official APK is available and verified. The public upstream source project is not. The four missing strings are a defect/edge case in the official binary rather than damage introduced by the local copy. A full source-faithful reconstruction is blocked by missing source/build inputs and the original signing key. Static recovery of non-capture UI behavior can continue, but a complete official-equivalent APK cannot honestly be promised from the current materials alone.
 
 All capture, privileged, native, and device-specific recording code remains out of scope and unmodified.
+
+
+## 8. Later official release scan — 2026-11-14
+
+Official releases 3.7.4, 3.7.5, and 3.7.6 were checked. Their assets have distinct SHA-256 values and are later-version binaries, not source archives. No original Android source, Gradle project, or build scripts were found in the public release endpoints or the upstream master/updates branches.
+
+The target remains pinned to 3.7.3. Later binaries are not used as drop-in replacements or as a source of guessed fragments because version-level compatibility and original method contracts cannot be established from the release metadata alone. See [UPSTREAM_RELEASE_SCAN.md](UPSTREAM_RELEASE_SCAN.md).
+
+The stage-19 narrative's 24/46/68/98 string-tail counts were based on Unicode code-point counts and are superseded. Correct Java UTF-16 lengths are 22/44/66/96, as recorded above.
+
+GitHub Actions run 43605120585 completed successfully, including the recovery-tool unit-test step.
+
+## 9. Build gate
+
+The final APK build has NOT started. The current repository has no reconstructed application source, original Gradle/dependency configuration, or authorized official signing key. Starting a repackaging job against the pristine binary would not constitute source recovery and would not produce an official-signature-compatible update. The build gate remains closed until legitimate build inputs are obtained.
