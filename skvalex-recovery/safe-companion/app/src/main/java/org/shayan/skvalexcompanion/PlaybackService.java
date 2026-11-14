@@ -82,8 +82,8 @@ public final class PlaybackService extends Service {
                     updateMediaSessionState();
                 } catch (IllegalStateException ignored) { }
             }
-            @Override public void onMediaButtonEvent(Intent mediaButtonIntent) {
-                super.onMediaButtonEvent(mediaButtonIntent);
+            @Override public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                return super.onMediaButtonEvent(mediaButtonIntent);
             }
         });
     }
