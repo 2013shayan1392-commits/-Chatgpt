@@ -5,13 +5,19 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 
 public final class PlaybackService extends Service {
     public static final String ACTION_PLAY = "org.shayan.skvalexcompanion.action.PLAY";
@@ -20,16 +26,39 @@ public final class PlaybackService extends Service {
     public static final String EXTRA_URI = "audio_uri";
     private static final String CHANNEL_ID = "local_audio_playback";
     private static final int NOTIFICATION_ID = 701;
+    private static final String STATE_ACTION = "org.shayan.skvalexcompanion.PLAYBACK_STATE";
 
     private MediaPlayer player;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
+    private AudioAttributes audioAttributes;
     private boolean preparing;
     private boolean playing;
-    private String currentUri;
+    private boolean hasAudioFocus;
+    private boolean resumeAfterFocusGain;
+    private boolean focusDucked;
+    private boolean noisyReceiverRegistered;
     private String currentName = "فایل صوتی";
+
+    private final AudioManager.OnAudioFocusChangeListener focusListener = this::onAudioFocusChanged;
+
+    private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction()) && player != null) {
+                pauseForExternalEvent("پخش به‌دلیل جداشدن هدفون متوقف شد.");
+            }
+        }
+    };
 
     @Override public void onCreate() {
         super.onCreate();
+        audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        audioAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build();
         createNotificationChannel();
+        registerNoisyReceiver();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -42,12 +71,16 @@ public final class PlaybackService extends Service {
                 stopSelf(startId);
                 return START_NOT_STICKY;
             }
-            currentUri = value;
-            currentName = resolveName(Uri.parse(value));
-            startAsForeground();
-            prepare(Uri.parse(value));
+            Uri uri = Uri.parse(value);
+            currentName = resolveName(uri);
+            try {
+                startAsForeground();
+                prepare(uri);
+            } catch (RuntimeException ex) {
+                fail("سیستم اجازهٔ شروع پخش پس‌زمینه را نداد.");
+            }
         } else if (ACTION_PAUSE.equals(action)) {
-            pause();
+            togglePlayback();
         } else if (ACTION_STOP.equals(action)) {
             stopPlayback();
         }
@@ -67,10 +100,8 @@ public final class PlaybackService extends Service {
         releasePlayer();
         try {
             player = new MediaPlayer();
-            player.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build());
+            player.setAudioAttributes(audioAttributes);
+            player.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
             player.setDataSource(this, uri);
             preparing = true;
             playing = false;
@@ -78,14 +109,7 @@ public final class PlaybackService extends Service {
             updateNotification("در حال آماده‌سازی…", false);
             player.setOnPreparedListener(mp -> {
                 preparing = false;
-                try {
-                    mp.start();
-                    playing = true;
-                    publishState("در حال پخش: " + currentName, true, true);
-                    updateNotification("در حال پخش: " + currentName, true);
-                } catch (IllegalStateException ex) {
-                    fail("پخش فایل شروع نشد.");
-                }
+                startPreparedPlayer();
             });
             player.setOnCompletionListener(mp -> {
                 playing = false;
@@ -101,26 +125,129 @@ public final class PlaybackService extends Service {
             });
             player.prepareAsync();
         } catch (Exception ex) {
-            fail("فایل قابل دسترسی نیست؛ مجوز یا فایل را بررسی کن.");
+            fail("فایل قابل دسترسی نیست؛ مجوز یا خود فایل را بررسی کن.");
         }
     }
 
-    private void pause() {
+    private void startPreparedPlayer() {
+        if (player == null || !requestAudioFocus()) {
+            fail("دسترسی صوتی سیستم در دسترس نیست؛ دوباره تلاش کن.");
+            return;
+        }
+        try {
+            player.setVolume(1.0f, 1.0f);
+            player.start();
+            playing = true;
+            resumeAfterFocusGain = false;
+            publishState("در حال پخش: " + currentName, true, true);
+            updateNotification("در حال پخش: " + currentName, true);
+        } catch (IllegalStateException ex) {
+            fail("پخش فایل شروع نشد.");
+        }
+    }
+
+    private boolean requestAudioFocus() {
+        if (audioManager == null) return false;
+        final int result;
+        if (Build.VERSION.SDK_INT >= 26) {
+            if (focusRequest == null) {
+                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(audioAttributes)
+                        .setOnAudioFocusChangeListener(focusListener)
+                        .setWillPauseWhenDucked(false)
+                        .build();
+            }
+            result = audioManager.requestAudioFocus(focusRequest);
+        } else {
+            result = audioManager.requestAudioFocus(
+                    focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        }
+        hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        return hasAudioFocus;
+    }
+
+    private void abandonAudioFocus() {
+        if (audioManager == null || !hasAudioFocus) return;
+        if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
+            audioManager.abandonAudioFocusRequest(focusRequest);
+        } else {
+            audioManager.abandonAudioFocus(focusListener);
+        }
+        hasAudioFocus = false;
+        focusDucked = false;
+        resumeAfterFocusGain = false;
+    }
+
+    private void onAudioFocusChanged(int change) {
+        if (player == null) return;
+        if (change == AudioManager.AUDIOFOCUS_LOSS) {
+            resumeAfterFocusGain = false;
+            pauseForExternalEvent("پخش به‌دلیل استفادهٔ برنامه‌ای دیگر از صدا متوقف شد.");
+            abandonAudioFocus();
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            resumeAfterFocusGain = playing;
+            pauseForExternalEvent("پخش موقتاً برای صدای دیگری مکث شد.");
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+            if (playing) {
+                try {
+                    player.setVolume(0.20f, 0.20f);
+                    focusDucked = true;
+                } catch (IllegalStateException ignored) { }
+            }
+        } else if (change == AudioManager.AUDIOFOCUS_GAIN) {
+            if (focusDucked && player != null) {
+                try { player.setVolume(1.0f, 1.0f); } catch (IllegalStateException ignored) { }
+                focusDucked = false;
+            }
+            if (resumeAfterFocusGain && player != null) {
+                resumeAfterFocusGain = false;
+                try {
+                    player.start();
+                    playing = true;
+                    publishState("در حال پخش: " + currentName, true, true);
+                    updateNotification("در حال پخش: " + currentName, true);
+                } catch (IllegalStateException ex) {
+                    fail("ادامهٔ پخش پس از بازگشت صدای سیستم ممکن نشد.");
+                }
+            }
+        }
+    }
+
+    private void togglePlayback() {
         if (player == null || preparing) return;
         try {
             if (player.isPlaying()) {
                 player.pause();
                 playing = false;
+                resumeAfterFocusGain = false;
                 publishState("پخش متوقف موقت شد.", false, true);
                 updateNotification("مکث: " + currentName, false);
             } else {
+                if (!requestAudioFocus()) {
+                    publishState("صدای سیستم فعلاً در اختیار برنامهٔ دیگری است.", false, true);
+                    return;
+                }
+                player.setVolume(1.0f, 1.0f);
                 player.start();
                 playing = true;
+                focusDucked = false;
                 publishState("در حال پخش: " + currentName, true, true);
                 updateNotification("در حال پخش: " + currentName, true);
             }
         } catch (IllegalStateException ex) {
             fail("وضعیت پخش دیگر معتبر نیست.");
+        }
+    }
+
+    private void pauseForExternalEvent(String message) {
+        if (player == null || preparing) return;
+        try {
+            if (player.isPlaying()) player.pause();
+            playing = false;
+            publishState(message, false, true);
+            updateNotification("مکث: " + currentName, false);
+        } catch (IllegalStateException ex) {
+            fail("توقف موقت پخش ممکن نشد.");
         }
     }
 
@@ -143,16 +270,28 @@ public final class PlaybackService extends Service {
     }
 
     private void releasePlayer() {
+        abandonAudioFocus();
         if (player != null) {
             try { player.reset(); } catch (IllegalStateException ignored) { }
             try { player.release(); } catch (IllegalStateException ignored) { }
             player = null;
         }
         preparing = false;
+        playing = false;
+    }
+
+    private void registerNoisyReceiver() {
+        IntentFilter filter = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(noisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(noisyReceiver, filter);
+        }
+        noisyReceiverRegistered = true;
     }
 
     private void publishState(String message, boolean isPlaying, boolean active) {
-        Intent state = new Intent("org.shayan.skvalexcompanion.PLAYBACK_STATE");
+        Intent state = new Intent(STATE_ACTION);
         state.setPackage(getPackageName());
         state.putExtra("message", message);
         state.putExtra("playing", isPlaying);
@@ -174,10 +313,8 @@ public final class PlaybackService extends Service {
         Intent open = new Intent(this, MainActivity.class);
         PendingIntent content = PendingIntent.getActivity(this, 700,
                 open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        String action = isPlaying ? ACTION_PAUSE : ACTION_PAUSE;
-        String actionLabel = isPlaying ? "مکث" : "ادامه";
         PendingIntent toggle = PendingIntent.getService(this, 701,
-                new Intent(this, PlaybackService.class).setAction(action),
+                new Intent(this, PlaybackService.class).setAction(ACTION_PAUSE),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this, 702,
                 new Intent(this, PlaybackService.class).setAction(ACTION_STOP),
@@ -193,7 +330,7 @@ public final class PlaybackService extends Service {
                 .setCategory(Notification.CATEGORY_TRANSPORT)
                 .setOngoing(true)
                 .addAction(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
-                        actionLabel, toggle)
+                        isPlaying ? "مکث" : "ادامه", toggle)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "توقف", stop);
         return builder.build();
     }
@@ -216,6 +353,10 @@ public final class PlaybackService extends Service {
 
     @Override public void onDestroy() {
         releasePlayer();
+        if (noisyReceiverRegistered) {
+            try { unregisterReceiver(noisyReceiver); } catch (IllegalArgumentException ignored) { }
+            noisyReceiverRegistered = false;
+        }
         super.onDestroy();
     }
 
