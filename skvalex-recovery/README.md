@@ -57,3 +57,11 @@ Any APK modification invalidates its original signing certificate. Without the d
 ## Status
 
 This is an active recovery workspace, not a completed recovered APK. The repository contains analysis notes and read-only validation tooling; it does not yet contain reconstructed application source or a rebuilt SKVALEX APK.
+
+
+## Latest compatibility analysis
+
+- The four failing Files-settings decoder calls have been traced to one unused class-initializer result, two file/folder-picker fragment identifiers, and one SIM/subscription dialog transaction tag.
+- Proposed stable fallback identifiers are documented in FILES_SETTINGS_COMPATIBILITY_FALLBACKS_AUDIT_20.md. These are compatible replacements, not recovered original plaintext.
+- Native recording/codec/JNI components are mapped at an architectural level but intentionally not replaced; see NATIVE_DEPENDENCY_RECOVERY_BOUNDARIES_AUDIT_21.md.
+- This repository remains a static-recovery workspace. It does not contain a rebuilt APK or an automated call-recorder packaging workflow.
