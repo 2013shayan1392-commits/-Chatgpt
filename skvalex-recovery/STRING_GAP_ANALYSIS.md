@@ -28,13 +28,16 @@ The returned string is discarded. The string decoder is nevertheless executed du
 
 Because the decoded return value is discarded, the call may be an obfuscation/validation artifact rather than a required preference value. That is a hypothesis, not a proven original design intent. Do not replace it with an invented string.
 
-## Call sites B–D — chooser and filename-pattern paths
+## Call sites B–D — listener and dialog paths
 
-The remaining unresolved calls are associated with:
-- two chooser paths in `Lo/pg2`
-- one filename-pattern path in `Lo/rg2`
+Further static evidence narrows the context:
+- `Lo/pg2` contains two unresolved decoder calls in its preference-listener method.
+- `Lo/rg2` contains one unresolved decoder call in its preference-listener method.
+- Both listener classes retain a reference to `org/skvalex/cr/Settings$FilesSettingsFragment`.
+- The Files settings fragment constructs these listener objects during its preference setup.
+- Nearby successfully recovered preference identifiers include `filename_pattern`, `rename_all_files`, `rename_files_automatically`, `trash_max_age`, `delete_short_recordings`, `max_number_of_files`, `max_total_size_of_files`, `max_age_of_recordings`, `folder`, and `cleanup_uploaded_only`.
 
-The current disassembly inventory establishes their keys and truncated chunk offsets, but does not include complete semantic disassembly for these two helper classes. Their exact call timing and expected outputs remain unproven.
+These facts place the unresolved calls in the file/recording-management settings UI, not in the audio backend. They do not establish the literal missing values or prove what each dialog expects.
 
 ## Evidence table
 
@@ -45,8 +48,12 @@ The current disassembly inventory establishes their keys and truncated chunk off
 | `0xffff84d3fe2d47cb` | `Lo/pg2.a` | 6959 | 68 | 110 |
 | `0xffff84f1fe2d47cb` | `Lo/rg2.a` | 6929 | 98 | 110 |
 
+All four calls share the same decoder length/mode/table metadata. The fourth encoded chunk has 7,027 UTF-16 characters; the required tails are absent from this chunk.
+
 ## Recovery decision
 
-No encoded tail is present in the available fourth chunk, so exact reconstruction from this APK alone is not currently possible. The first call is a strong candidate for a minimal no-op correction because its return value is discarded, but that change must remain a proposal until corroborated against an unmodified official copy of the same build or source-level evidence. The other three calls require complete caller disassembly and evidence about their expected strings.
+Exact reconstruction from this APK's encoded chunk is not currently possible. The first call is a candidate for a minimal no-op correction because its return value is discarded, but this is not yet approved: independent evidence is needed to establish that the call has no intended side effect and that removing it preserves initialization behavior.
+
+The other three calls require complete semantic disassembly of their listener methods and independent evidence for the expected strings. Do not invent string literals or substitute generic defaults.
 
 No source code, DEX bytecode, APK signature, or recording backend has been modified.
