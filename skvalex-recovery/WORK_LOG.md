@@ -48,3 +48,14 @@ Continue with non-capture static analysis of the two listener classes, resource 
 - Rechecked the DEX string-table header. The final string declares 7,025 UTF-16 code units. A previous 7,027 Python code-point count was not equivalent to Java String.length(); corrected the remaining lengths to 22, 44, 66, and 96 UTF-16 code units.
 - Added `MISSING_COMPONENTS_AND_RECOVERY_SOURCES.md` to distinguish located evidence from unavailable source/build/signing/runtime inputs.
 - No APK bytes or recording/capture code were modified.
+
+
+## 2026-11-14 — Later upstream releases and CI result
+
+- Checked official release metadata for 3.7.4, 3.7.5, and 3.7.6 and recorded each APK's distinct SHA-256 in UPSTREAM_RELEASE_SCAN.md.
+- Confirmed the later release artifacts do not provide an Android source tree or original Gradle/build configuration.
+- Rechecked the public upstream branch contents: master is empty and updates contains metadata/changelogs only.
+- Confirmed GitHub Actions run 43605120585 completed successfully; the verify-tooling job and unit-test step succeeded.
+- Corrected the stale stage-19 narrative discrepancy: the DEX UTF-16 lengths are 22/44/66/96, not 24/46/68/98.
+- Kept the recovery target pinned to 3.7.3; no code/resources were transplanted from later binaries.
+- No application patch or final APK build was started because the original source/build configuration and signing authorization remain unavailable.
