@@ -186,19 +186,23 @@ public final class MainActivity extends Activity {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(12), dp(8), dp(12), dp(8));
-        TextView path = label("محتویات پوشه", 17, true);
-        panel.addView(path, params());
+        panel.addView(label("فقط پوشه‌ها و فایل‌های صوتی نمایش داده می‌شوند.", 13, false), params());
         Button up = button("بازگشت به پوشهٔ قبلی");
         up.setEnabled(stack.size() > 1);
-        up.setOnClickListener(v -> {
-            if (stack.size() > 1) { stack.remove(stack.size() - 1); showFolderLevel(stack); }
-        });
         panel.addView(up, params());
         ScrollView listScroll = new ScrollView(this);
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         listScroll.addView(list);
         panel.addView(listScroll, new LinearLayout.LayoutParams(-1, dp(360)));
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        up.setOnClickListener(v -> {
+            if (stack.size() > 1) {
+                stack.remove(stack.size() - 1);
+                if (dialogRef[0] != null) dialogRef[0].dismiss();
+                showFolderLevel(stack);
+            }
+        });
         String currentId = stack.get(stack.size() - 1);
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(folderUri, currentId);
         String[] projection = new String[] {
@@ -222,7 +226,11 @@ public final class MainActivity extends Activity {
                     long size = sizeCol >= 0 && !cursor.isNull(sizeCol) ? cursor.getLong(sizeCol) : -1;
                     if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
                         Button folder = button("📁  " + name);
-                        folder.setOnClickListener(v -> { stack.add(id); showFolderLevel(stack); });
+                        folder.setOnClickListener(v -> {
+                            stack.add(id);
+                            if (dialogRef[0] != null) dialogRef[0].dismiss();
+                            showFolderLevel(stack);
+                        });
                         list.addView(folder, params());
                         count++;
                     } else if (mime != null && mime.startsWith("audio/")) {
@@ -233,6 +241,7 @@ public final class MainActivity extends Activity {
                             refreshSavedLabels();
                             status.setText("فایل از پوشه انتخاب شد: " + name);
                             updateControls(false, false);
+                            if (dialogRef[0] != null) dialogRef[0].dismiss();
                         });
                         list.addView(file, params());
                         count++;
@@ -240,12 +249,12 @@ public final class MainActivity extends Activity {
                 }
             }
         } catch (Exception ex) {
-            TextView error = label("این ارائه‌دهنده امکان فهرست‌کردن محتویات پوشه را نداد. می‌توانی فایل را با «انتخاب فایل صوتی» جداگانه انتخاب کنی.", 13, false);
-            list.addView(error, params());
+            list.addView(label("این ارائه‌دهنده امکان فهرست‌کردن محتویات پوشه را نداد. فایل را جداگانه انتخاب کن.", 13, false), params());
         }
         if (count == 0 && list.getChildCount() == 0) list.addView(label("فایل صوتی یا زیرپوشه‌ای در این مسیر پیدا نشد.", 13, false), params());
-        new AlertDialog.Builder(this).setTitle("مرور پوشه").setView(panel)
-                .setNegativeButton("بستن", null).show();
+        dialogRef[0] = new AlertDialog.Builder(this).setTitle("مرور پوشه").setView(panel)
+                .setNegativeButton("بستن", null).create();
+        dialogRef[0].show();
     }
 
     private String formatBytes(long value) {
