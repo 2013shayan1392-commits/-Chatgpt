@@ -91,3 +91,12 @@ Changing any APK byte invalidates its original signature. Without the original d
 - GitHub Actions run 43605120585 completed successfully. Job verify-tooling and the recovery-tool unit-test step both report success.
 - Canonical missing-string lengths remain 22, 44, 66, and 96 UTF-16 code units. The older stage-19 narrative's 24/46/68/98 values are superseded.
 - No application source patch or APK build was started: source/build inputs and official signing authorization are unavailable. See [UPSTREAM_RELEASE_SCAN.md](UPSTREAM_RELEASE_SCAN.md).
+
+
+## Recovery-tool progress — 2026-11-14
+
+- Added a UTF-16-aware contract checker for the four unresolved Files-settings decoder call sites.
+- Added five unit tests covering Java UTF-16 length semantics, the four recorded tail lengths, return-value usage, in-bounds fixtures, and invalid offsets.
+- Local test result: 5/5 passed.
+- This establishes a reproducible diagnostic gate; it does not yet replace application code or resolve the three consumed missing strings.
+- No APK/Dex patch or APK build has been performed.
