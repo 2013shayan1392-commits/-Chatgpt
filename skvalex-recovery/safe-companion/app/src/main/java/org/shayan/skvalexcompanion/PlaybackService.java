@@ -26,6 +26,7 @@ public final class PlaybackService extends Service {
     public static final String ACTION_PLAY = "org.shayan.skvalexcompanion.action.PLAY";
     public static final String ACTION_PAUSE = "org.shayan.skvalexcompanion.action.PAUSE";
     public static final String ACTION_STOP = "org.shayan.skvalexcompanion.action.STOP";
+    public static final String ACTION_QUERY_STATE = "org.shayan.skvalexcompanion.action.QUERY_STATE";
     public static final String EXTRA_URI = "audio_uri";
     private static final String CHANNEL_ID = "local_audio_playback";
     private static final int NOTIFICATION_ID = 701;
@@ -110,6 +111,12 @@ public final class PlaybackService extends Service {
             togglePlayback();
         } else if (ACTION_STOP.equals(action)) {
             stopPlayback();
+        } else if (ACTION_QUERY_STATE.equals(action)) {
+            boolean active = player != null;
+            String message = playing ? "در حال پخش: " + currentName
+                    : (active ? "پخش متوقف موقت شد." : "آماده");
+            publishState(message, playing, active);
+            if (!active) stopSelf(startId);
         }
         return START_NOT_STICKY;
     }
