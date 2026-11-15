@@ -28,12 +28,15 @@ class SystemRecordingImporter(context: Context) {
 
     fun importSelectedAudio(uri: Uri): ImportedRecording {
         val mimeType = resolver.getType(uri)
-        require(mimeType == null || mimeType.startsWith("audio/")) {
-            "The selected item is not identified as an audio file."
-        }
-
         val sourceName = queryDisplayName(uri)
         val safeName = sanitizeFileName(sourceName)
+        val sourceExtension = safeName.substringAfterLast('.', "").lowercase()
+        val recognizedAudioExtension = sourceExtension in setOf(
+            "aac", "amr", "flac", "m4a", "mp3", "ogg", "opus", "wav", "3gp"
+        )
+        require(mimeType?.startsWith("audio/") == true || recognizedAudioExtension) {
+            "The selected item is not identified as an audio file."
+        }
         val extension = safeName.substringAfterLast('.', "")
             .takeIf { it.isNotBlank() }
             ?: extensionForMime(mimeType)
@@ -62,7 +65,7 @@ class SystemRecordingImporter(context: Context) {
             check(temporary.renameTo(destination)) {
                 "Could not finalize the imported audio file."
             }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             temporary.delete()
             destination.delete()
             throw error
