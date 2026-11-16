@@ -37,7 +37,7 @@ export function verifyEitaaInitData(initData, botToken, nowSeconds = Math.floor(
   if (!hash || !/^[a-f0-9]{64}$/i.test(hash) || !Number.isInteger(authDate) ||
       authDate > nowSeconds + 30 || nowSeconds - authDate > 3600) return null;
   params.delete('hash');
-  const checkString = [...params.entries()].map(([key, value]) => key + '=' + value).sort().join('\\n');
+  const checkString = [...params.entries()].map(([key, value]) => key + '=' + value).sort().join('\n');
   const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
   const calculated = createHmac('sha256', secretKey).update(checkString).digest('hex');
   const a = Buffer.from(calculated, 'hex'), b = Buffer.from(hash, 'hex');
