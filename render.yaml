@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: tabligh-yar
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: tabligh-yar
+    rootDir: tabligh-yar
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEV_ALLOW_TEST_USER
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://nvegaokijnrknjwctkbt.supabase.co
+      - key: SUPABASE_STORAGE_BUCKET
+        value: receipts
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: EITAA_BOT_TOKEN
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
