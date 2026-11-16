@@ -1,4 +1,5 @@
 const $ = id => document.getElementById(id);
+const API_BASE = window.TABLIGH_API_BASE || '';
 let csrfToken = '', settings = { price_per_10000: 90000, min_views: 1000, max_views: 200000 }, eitaaUser = false;
 const money = n => Number(n).toLocaleString('fa-IR') + ' تومان';
 const numberFa = n => Number(n).toLocaleString('fa-IR');
@@ -6,7 +7,8 @@ const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 async function api(url, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.method && options.method !== 'GET') headers['x-csrf-token'] = csrfToken;
-  const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
+  const targetUrl = url.startsWith('/api/') ? API_BASE + url : url;
+  const response = await fetch(targetUrl, { ...options, headers, credentials: 'same-origin' });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'خطا در ارتباط با سرور');
   return data;
@@ -65,7 +67,7 @@ $('adminForm').addEventListener('submit', async e => {
 });
 async function loadAdminOrders() {
   const data = await api('/api/admin/orders');
-  $('adminOrders').innerHTML = data.orders.length ? data.orders.map(o => `<article class="order"><b>#${numberFa(o.id)} · ${escapeHtml(o.user_name || o.user_id)}</b><br>${numberFa(o.requested_views)} بازدید · ${money(o.quoted_price)}<br><a href="${escapeHtml(o.channel_url)}" target="_blank" rel="noopener noreferrer">کانال</a> · <a href="/api/admin/orders/${encodeURIComponent(o.id)}/receipt" target="_blank" rel="noopener noreferrer">مشاهده رسید</a><p>${escapeHtml(o.ad_text)}</p><small>وضعیت: ${statusName(o.status)}${o.final_views != null ? ' · بازدید نهایی: '+numberFa(o.final_views):''}</small>${o.admin_note ? '<p>یادداشت: '+escapeHtml(o.admin_note)+'</p>':''}<div class="actions">${['paid','payment_rejected','published','completed','cancelled'].map(s=>`<button type="button" data-id="${o.id}" data-status="${s}" class="secondary">${statusName(s)}</button>`).join('')}</div></article>`).join('') : 'هنوز سفارشی ثبت نشده است.';
+  $('adminOrders').innerHTML = data.orders.length ? data.orders.map(o => `<article class="order"><b>#${numberFa(o.id)} · ${escapeHtml(o.user_name || o.user_id)}</b><br>${numberFa(o.requested_views)} بازدید · ${money(o.quoted_price)}<br><a href="${escapeHtml(o.channel_url)}" target="_blank" rel="noopener noreferrer">کانال</a> · <a href="${API_BASE}/api/admin/orders/${encodeURIComponent(o.id)}/receipt" target="_blank" rel="noopener noreferrer">مشاهده رسید</a><p>${escapeHtml(o.ad_text)}</p><small>وضعیت: ${statusName(o.status)}${o.final_views != null ? ' · بازدید نهایی: '+numberFa(o.final_views):''}</small>${o.admin_note ? '<p>یادداشت: '+escapeHtml(o.admin_note)+'</p>':''}<div class="actions">${['paid','payment_rejected','published','completed','cancelled'].map(s=>`<button type="button" data-id="${o.id}" data-status="${s}" class="secondary">${statusName(s)}</button>`).join('')}</div></article>`).join('') : 'هنوز سفارشی ثبت نشده است.';
   $('adminOrders').querySelectorAll('button[data-id]').forEach(btn => btn.onclick = async () => {
     const note = prompt('یادداشت مدیر (اختیاری):') ?? '';
     let publishedPostUrl = null, finalViews = null;
