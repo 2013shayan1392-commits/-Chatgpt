@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules
+npm-debug.log*
+storage/receipts/*
+!storage/receipts/.gitkeep
+test
+.git
