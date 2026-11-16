@@ -17,7 +17,19 @@
 3. `npm install`، سپس `npm test` و در پایان `npm start` را اجرا کنید.
 4. در محیط محلی می‌توان برای آزمایش رابط کاربری از `DEV_ALLOW_TEST_USER=true` استفاده کرد؛ این گزینه باید در تولید حتماً `false` باشد.
 
-## استقرار روی هاست
+## استقرار آنلاین فعلی
+
+نسخه آنلاین با Supabase Edge Function اجرا می‌شود؛ برای شروع به هاست Node.js جداگانه نیاز نیست. آدرس مینی‌اپ:
+
+`https://nvegaokijnrknjwctkbt.supabase.co/functions/v1/tabligh-yar`
+
+آدرس سلامت:
+
+`https://nvegaokijnrknjwctkbt.supabase.co/functions/v1/tabligh-yar/api/health`
+
+کد Edge Function در `supabase/functions/tabligh-yar/` نگهداری می‌شود. راهنمای افزودن secrets در [deploy/FREE-HOSTING.md](deploy/FREE-HOSTING.md) قرار دارد.
+
+## استقرار Node.js مستقل (اختیاری)
 این پروژه به‌صورت یک Node.js web service اجرا می‌شود:
 - Runtime: Node.js 20 یا جدیدتر
 - Root directory: `tabligh-yar` (اگر میزبان از ریشه پروژه پشتیبانی می‌کند)
