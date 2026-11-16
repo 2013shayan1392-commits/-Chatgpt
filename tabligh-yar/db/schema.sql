@@ -16,6 +16,21 @@ CREATE TABLE IF NOT EXISTS admins (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE admins
+  ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'manager',
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE admins DROP CONSTRAINT IF EXISTS admins_role_check;
+ALTER TABLE admins ADD CONSTRAINT admins_role_check CHECK (role IN ('owner','manager'));
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  actor_username TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_username TEXT,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS ad_orders (
   id BIGSERIAL PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -54,6 +69,7 @@ ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ad_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_audit_log ENABLE ROW LEVEL SECURITY;
 
 -- Receipts are private and restricted to image formats accepted by the app.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
