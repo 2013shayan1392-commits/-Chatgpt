@@ -201,7 +201,7 @@ app.get('/api/admin/orders/:id/receipt', auth, adminOnly, adminLimiter, async (r
     const { rows } = await pool.query('SELECT receipt_path FROM ad_orders WHERE id=$1', [req.params.id]);
     if (!rows[0]) return res.sendStatus(404);
     const key = rows[0].receipt_path;
-    if (!/^[0-9a-f-]{36}\\.(jpg|png|webp)$/i.test(key) || !supabase) return res.sendStatus(404);
+    if (!/^[0-9a-f-]{36}\.(jpg|png|webp)$/i.test(key) || !supabase) return res.sendStatus(404);
     const { data, error } = await supabase.storage.from(receiptBucket).download(key);
     if (error || !data) return res.sendStatus(404);
     const ext = path.extname(key).toLowerCase();
