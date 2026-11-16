@@ -60,7 +60,9 @@ Edge Function نسخه ۳ با وضعیت ACTIVE روی پروژه Supabase مس
 
 - The account configured by `ADMIN_USERNAME` and `ADMIN_PASSWORD` is bootstrapped as the sole `owner`.
 - Only the owner can add or disable manager accounts, change pricing/payment instructions, or change order status.
-- Manager accounts are read-only: they can view orders and payment receipts, but cannot modify orders, settings, or other accounts.
+- Manager entries are notification recipients only. They cannot log into the management panel or view orders/receipts through the app.
+- When a new order is placed, the app sends the receipt image and order summary to each active manager's Eitaa chat ID. If sending the image fails, it attempts a text-only alert.
+- Each recipient must start the Eitaa bot before direct messages can be delivered. Eitaa's published guide says direct messages require the user to grant access by starting the bot; its initial free allowance is 50,000 messages. No automatic paid top-up is configured.
 - Manager authorization is checked against the database on every protected request, so disabling an account blocks its existing sessions on the next request.
 - Manager creation and disable actions are written to `admin_audit_log`.
 - Keep the Supabase organization/project ownership and all server secrets under the owner's personal control. Never share the Supabase service-role key or Eitaa bot token with managers.
