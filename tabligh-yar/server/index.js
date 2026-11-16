@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { isEitaaChannelUrl, detectImageExtension, calculatePrice } from './validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -30,7 +31,7 @@ app.use(helmet({ contentSecurityPolicy: { directives: {
   defaultSrc: ["'self'"], scriptSrc: ["'self'", 'https://developer.eitaa.com'],
   styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'],
   connectSrc: ["'self'"], objectSrc: ["'none'"], baseUri: ["'self'"],
-  frameAncestors: ["'self'", 'https://*.eitaa.com']
+  frameAncestors: ["'self'", 'https://eitaa.com', 'https://*.eitaa.com']
 }}}));
 app.use(express.json({ limit: '300kb' }));
 app.use(cookieParser());
@@ -38,6 +39,7 @@ app.use(express.static(path.resolve(__dirname, '../public')));
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false });
 const orderLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false });
+const adminLimiter = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 
 function setCsrf(res) {
   const token = crypto.randomBytes(24).toString('hex');
@@ -70,9 +72,10 @@ function verifyEitaaInitData(initData) {
   const params = new URLSearchParams(initData);
   const hash = params.get('hash');
   const authDate = Number(params.get('auth_date'));
-  if (!hash || !Number.isFinite(authDate) || Math.abs(Date.now() / 1000 - authDate) > 3600) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (!hash || !Number.isFinite(authDate) || authDate > now + 30 || now - authDate > 3600) return null;
   params.delete('hash');
-  const checkString = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => k + '=' + v).join('\n');
+  const checkString = [...params.entries()].map(([key, value]) => key + '=' + value).sort().join('\n');
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(process.env.EITAA_BOT_TOKEN).digest();
   const calculated = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
   const a = Buffer.from(calculated, 'hex'), b = Buffer.from(hash, 'hex');
@@ -83,37 +86,45 @@ function verifyEitaaInitData(initData) {
     return { id: String(user.id), name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'کاربر ایتا' };
   } catch { return null; }
 }
+function safeHttpsUrl(value) {
+  try { const url = new URL(value); return url.protocol === 'https:'; } catch { return false; }
+}
 
 app.get('/api/health', async (_req, res) => {
   try { await pool.query('SELECT 1'); res.json({ ok: true, database: 'connected' }); }
   catch { res.status(503).json({ ok: false, database: 'unavailable' }); }
 });
 app.get('/api/csrf', (_req, res) => res.json({ ok: true, csrfToken: setCsrf(res) }));
-app.get('/api/config', async (_req, res) => {
-  const { rows } = await pool.query('SELECT price_per_10000,min_views,max_views FROM app_settings WHERE id=1');
-  res.json(rows[0]);
+app.get('/api/config', async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT price_per_10000,min_views,max_views FROM app_settings WHERE id=1');
+    if (!rows[0]) return res.status(503).json({ error: 'تنظیمات اولیه پایگاه داده موجود نیست؛ schema.sql را اجرا کنید.' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
 });
 app.post('/api/auth/eitaa', authLimiter, csrf, (req, res) => {
   const user = verifyEitaaInitData(req.body?.initData);
   if (!user) {
     if (!isProd && process.env.DEV_ALLOW_TEST_USER === 'true') {
       const test = { id: 'local-test-user', name: 'کاربر آزمایشی' };
-      res.cookie('ty_session', signSession({ role: 'customer', ...test }), { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 12 * 3600 * 1000 });
+      res.cookie('ty_session', signSession({ role: 'customer', ...test }), { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 12 * 3600 * 1000, path: '/' });
       return res.json({ ok: true, user: test, dev: true });
     }
     return res.status(401).json({ error: 'اطلاعات ورود ایتا معتبر نیست.' });
   }
-  res.cookie('ty_session', signSession({ role: 'customer', ...user }), { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 12 * 3600 * 1000 });
+  res.cookie('ty_session', signSession({ role: 'customer', ...user }), { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 12 * 3600 * 1000, path: '/' });
   res.json({ ok: true, user });
 });
-app.post('/api/auth/admin', authLimiter, csrf, async (req, res) => {
-  const { username, password } = req.body || {};
-  if (typeof username !== 'string' || typeof password !== 'string' || username.length > 80 || password.length > 200) return res.status(400).json({ error: 'اطلاعات ورود نامعتبر است.' });
-  const { rows } = await pool.query('SELECT username,password_hash FROM admins WHERE username=$1', [username]);
-  const valid = rows[0] && await bcrypt.compare(password, rows[0].password_hash);
-  if (!valid) return res.status(401).json({ error: 'نام کاربری یا رمز عبور اشتباه است.' });
-  res.cookie('ty_session', signSession({ role: 'admin', username }), { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 12 * 3600 * 1000 });
-  res.json({ ok: true });
+app.post('/api/auth/admin', authLimiter, csrf, async (req, res, next) => {
+  try {
+    const { username, password } = req.body || {};
+    if (typeof username !== 'string' || typeof password !== 'string' || username.length > 80 || password.length > 200) return res.status(400).json({ error: 'اطلاعات ورود نامعتبر است.' });
+    const { rows } = await pool.query('SELECT username,password_hash FROM admins WHERE username=$1', [username]);
+    const valid = rows[0] && await bcrypt.compare(password, rows[0].password_hash);
+    if (!valid) return res.status(401).json({ error: 'نام کاربری یا رمز عبور اشتباه است.' });
+    res.cookie('ty_session', signSession({ role: 'admin', username }), { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 12 * 3600 * 1000, path: '/' });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 app.post('/api/auth/logout', csrf, (_req, res) => {
   res.clearCookie('ty_session', { httpOnly: true, secure: isProd, sameSite: 'strict', path: '/' });
@@ -133,74 +144,95 @@ const upload = multer({
     cb(null, true);
   }
 });
-app.post('/api/orders', auth, orderLimiter, csrf, upload.single('receipt'), async (req, res) => {
+app.post('/api/orders', auth, orderLimiter, csrf, upload.single('receipt'), async (req, res, next) => {
+  let client;
   try {
     const views = Number(req.body.views);
     const channelUrl = String(req.body.channelUrl || '').trim();
     const adText = String(req.body.adText || '').trim();
-    const parsed = (() => { try { return new URL(channelUrl); } catch { return null; } })();
-    if (!req.file) return res.status(400).json({ error: 'تصویر رسید الزامی است.' });
-    if (!Number.isInteger(views) || views < 1000 || views > 200000 || views % 1000) return res.status(400).json({ error: 'تعداد بازدید باید بین ۱۰۰۰ تا ۲۰۰۰۰۰ و مضرب ۱۰۰۰ باشد.' });
-    if (!parsed || parsed.protocol !== 'https:' || !['eitaa.com', 'www.eitaa.com'].includes(parsed.hostname)) return res.status(400).json({ error: 'لینک کانال باید از دامنهٔ رسمی ایتا باشد.' });
-    if (adText.length < 5 || adText.length > 5000) return res.status(400).json({ error: 'متن تبلیغ باید بین ۵ تا ۵۰۰۰ نویسه باشد.' });
+    if (!req.file) throw Object.assign(new Error('تصویر رسید الزامی است.'), { status: 400 });
+    const actualExt = detectImageExtension(fs.readFileSync(req.file.path));
+    if (!actualExt || actualExt !== req.file.safeExt) throw Object.assign(new Error('محتوای فایل با فرمت تصویر انتخاب‌شده مطابقت ندارد.'), { status: 400 });
+    if (!Number.isInteger(views) || views < 1000 || views > 200000 || views % 1000) throw Object.assign(new Error('تعداد بازدید باید بین ۱۰۰۰ تا ۲۰۰۰۰۰ و مضرب ۱۰۰۰ باشد.'), { status: 400 });
+    if (!isEitaaChannelUrl(channelUrl)) throw Object.assign(new Error('لینک کانال باید از دامنهٔ رسمی ایتا باشد.'), { status: 400 });
+    if (adText.length < 5 || adText.length > 5000) throw Object.assign(new Error('متن تبلیغ باید بین ۵ تا ۵۰۰۰ نویسه باشد.'), { status: 400 });
     const { rows: settings } = await pool.query('SELECT price_per_10000,min_views,max_views FROM app_settings WHERE id=1');
+    if (!settings[0]) throw Object.assign(new Error('تنظیمات اولیه پایگاه داده موجود نیست.'), { status: 503 });
+    if (views < settings[0].min_views || views > settings[0].max_views) throw Object.assign(new Error('تعداد بازدید خارج از محدوده تنظیم‌شده است.'), { status: 400 });
     const rate = BigInt(settings[0].price_per_10000);
-    const price = (rate * BigInt(views)) / 10000n;
-    const { rows } = await pool.query(
+    const price = calculatePrice(rate, views);
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const { rows } = await client.query(
       'INSERT INTO ad_orders(user_id,user_name,channel_url,ad_text,requested_views,quoted_price,price_per_10000_snapshot,receipt_path) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,status,requested_views,quoted_price,created_at',
-      [req.session.id, req.session.name || null, parsed.toString(), adText, views, price.toString(), rate.toString(), req.file.filename]
+      [req.session.id, req.session.name || null, new URL(channelUrl).toString(), adText, views, price.toString(), rate.toString(), req.file.filename]
     );
+    await client.query('INSERT INTO order_events(order_id,admin_username,old_status,new_status,note) VALUES($1,$2,NULL,$3,$4)', [rows[0].id, 'system', 'pending', 'سفارش توسط کاربر ثبت شد']);
+    await client.query('COMMIT');
     res.status(201).json({ order: rows[0] });
   } catch (err) {
-    if (req.file) fs.unlink(req.file.path, () => {});
-    throw err;
-  }
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
+    next(err);
+  } finally { client?.release(); }
 });
-app.get('/api/orders', auth, async (req, res) => {
-  const { rows } = await pool.query('SELECT id,requested_views,quoted_price,status,admin_note,published_post_url,final_views,created_at,updated_at FROM ad_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100', [req.session.id]);
-  res.json({ orders: rows });
+app.get('/api/orders', auth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT id,requested_views,quoted_price,status,admin_note,published_post_url,final_views,created_at,updated_at FROM ad_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100', [req.session.id]);
+    res.json({ orders: rows });
+  } catch (err) { next(err); }
 });
-app.get('/api/admin/orders', auth, adminOnly, async (_req, res) => {
-  const { rows } = await pool.query('SELECT id,user_id,user_name,channel_url,ad_text,requested_views,quoted_price,status,admin_note,published_post_url,final_views,receipt_path,created_at FROM ad_orders ORDER BY created_at DESC LIMIT 300');
-  res.json({ orders: rows.map(({ receipt_path, ...row }) => row) });
+app.get('/api/admin/orders', auth, adminOnly, adminLimiter, async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT id,user_id,user_name,channel_url,ad_text,requested_views,quoted_price,status,admin_note,published_post_url,final_views,created_at FROM ad_orders ORDER BY created_at DESC LIMIT 300');
+    res.json({ orders: rows });
+  } catch (err) { next(err); }
 });
-app.get('/api/admin/orders/:id/receipt', auth, adminOnly, async (req, res) => {
-  const { rows } = await pool.query('SELECT receipt_path FROM ad_orders WHERE id=$1', [req.params.id]);
-  if (!rows[0]) return res.sendStatus(404);
-  const file = path.join(storageDir, path.basename(rows[0].receipt_path));
-  if (!fs.existsSync(file)) return res.sendStatus(404);
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.type(path.extname(file)).sendFile(file);
+app.get('/api/admin/orders/:id/receipt', auth, adminOnly, adminLimiter, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT receipt_path FROM ad_orders WHERE id=$1', [req.params.id]);
+    if (!rows[0]) return res.sendStatus(404);
+    const file = path.join(storageDir, path.basename(rows[0].receipt_path));
+    if (!fs.existsSync(file)) return res.sendStatus(404);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.type(path.extname(file)).sendFile(file);
+  } catch (err) { next(err); }
 });
-app.patch('/api/admin/orders/:id', auth, adminOnly, csrf, async (req, res) => {
+app.patch('/api/admin/orders/:id', auth, adminOnly, adminLimiter, csrf, async (req, res, next) => {
   const allowed = ['pending','paid','payment_rejected','published','completed','cancelled'];
   const { status, note, publishedPostUrl, finalViews } = req.body || {};
   if (!allowed.includes(status)) return res.status(400).json({ error: 'وضعیت سفارش نامعتبر است.' });
-  const client = await pool.connect();
+  if (publishedPostUrl != null && publishedPostUrl !== '' && !safeHttpsUrl(publishedPostUrl)) return res.status(400).json({ error: 'لینک انتشار باید HTTPS باشد.' });
+  if (finalViews != null && (!Number.isInteger(finalViews) || finalViews < 0)) return res.status(400).json({ error: 'تعداد بازدید نهایی نامعتبر است.' });
+  let client;
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
     const old = await client.query('SELECT status FROM ad_orders WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!old.rows[0]) { await client.query('ROLLBACK'); return res.sendStatus(404); }
     const updated = await client.query(
       'UPDATE ad_orders SET status=$1,admin_note=$2,published_post_url=$3,final_views=$4,updated_at=NOW() WHERE id=$5 RETURNING id,status,admin_note,published_post_url,final_views',
-      [status, typeof note === 'string' ? note.slice(0,1000) : null, typeof publishedPostUrl === 'string' ? publishedPostUrl.slice(0,500) : null, Number.isInteger(finalViews) && finalViews >= 0 ? finalViews : null, req.params.id]
+      [status, typeof note === 'string' ? note.slice(0,1000) : null, publishedPostUrl || null, finalViews ?? null, req.params.id]
     );
     await client.query('INSERT INTO order_events(order_id,admin_username,old_status,new_status,note) VALUES($1,$2,$3,$4,$5)', [req.params.id, req.session.username, old.rows[0].status, status, typeof note === 'string' ? note.slice(0,1000) : null]);
     await client.query('COMMIT');
     res.json({ order: updated.rows[0] });
-  } catch (err) { await client.query('ROLLBACK'); throw err; }
-  finally { client.release(); }
+  } catch (err) { if (client) await client.query('ROLLBACK').catch(() => {}); next(err); }
+  finally { client?.release(); }
 });
-app.patch('/api/admin/settings', auth, adminOnly, csrf, async (req, res) => {
-  const rate = Number(req.body?.pricePer10000);
-  if (!Number.isSafeInteger(rate) || rate < 1 || rate > 1000000000) return res.status(400).json({ error: 'تعرفه نامعتبر است.' });
-  const { rows } = await pool.query('UPDATE app_settings SET price_per_10000=$1,updated_at=NOW() WHERE id=1 RETURNING price_per_10000,min_views,max_views', [rate]);
-  res.json({ settings: rows[0] });
+app.patch('/api/admin/settings', auth, adminOnly, adminLimiter, csrf, async (req, res, next) => {
+  try {
+    const rate = Number(req.body?.pricePer10000);
+    if (!Number.isSafeInteger(rate) || rate < 1 || rate > 1000000000) return res.status(400).json({ error: 'تعرفه نامعتبر است.' });
+    const { rows } = await pool.query('UPDATE app_settings SET price_per_10000=$1,updated_at=NOW() WHERE id=1 RETURNING price_per_10000,min_views,max_views', [rate]);
+    res.json({ settings: rows[0] });
+  } catch (err) { next(err); }
 });
 
 app.use((err, _req, res, _next) => {
   console.error(err);
   if (err instanceof multer.MulterError) return res.status(400).json({ error: 'فایل رسید بیش از حد مجاز است یا معتبر نیست.' });
+  if (err.status === 400) return res.status(400).json({ error: err.message });
   if (String(err.message || '').startsWith('فقط تصویر')) return res.status(400).json({ error: err.message });
   res.status(500).json({ error: 'خطای داخلی سرور.' });
 });
