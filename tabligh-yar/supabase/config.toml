@@ -1,0 +1,4 @@
+project_id = "nvegaokijnrknjwctkbt"
+
+[functions.tabligh-yar]
+verify_jwt = false
