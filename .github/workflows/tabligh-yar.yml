@@ -1,0 +1,36 @@
+name: Tabligh-Yar checks
+
+on:
+  push:
+    branches: [tabligh-yar]
+    paths:
+      - 'tabligh-yar/**'
+      - '.github/workflows/tabligh-yar.yml'
+  pull_request:
+    branches: [tabligh-yar]
+    paths:
+      - 'tabligh-yar/**'
+      - '.github/workflows/tabligh-yar.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tabligh-yar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check JavaScript syntax
+        run: |
+          node --check server/index.js
+          node --check server/validation.js
+          node --check public/app.js
+      - name: Run unit tests
+        run: npm test
+      - name: Check production dependency advisories
+        run: npm audit --omit=dev
