@@ -167,7 +167,7 @@ async function notifyManagersOfReceipt(order, receiptKey) {
     "بازدید درخواستی: " + order.requested_views.toLocaleString("fa-IR"),
     "مبلغ: " + Number(order.quoted_price).toLocaleString("fa-IR") + " تومان",
     "کانال: " + order.channel_url
-  ].join("\\n");
+  ].join("\n");
   await Promise.all(managers.map(async manager => {
     try {
       const form = new FormData();
