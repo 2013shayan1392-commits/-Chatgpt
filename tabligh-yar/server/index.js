@@ -7,10 +7,10 @@ import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { createClient } from '@supabase/supabase-js';
 import { isEitaaChannelUrl, detectImageExtension, calculatePrice, verifyEitaaInitData } from './validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,17 +21,39 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 10, 
 const PORT = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
 const secret = process.env.SESSION_SECRET || '';
-if (isProd && (secret.length < 32 || !process.env.EITAA_BOT_TOKEN)) {
-  throw new Error('Production requires SESSION_SECRET (32+ chars) and EITAA_BOT_TOKEN.');
+if (isProd && (secret.length < 32 || !process.env.EITAA_BOT_TOKEN || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
+  throw new Error('Production requires SESSION_SECRET (32+ chars), EITAA_BOT_TOKEN, SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
 }
 if (isProd && process.env.APP_ORIGIN && !process.env.APP_ORIGIN.startsWith('https://')) {
   throw new Error('APP_ORIGIN must use HTTPS when provided.');
 }
 if (!isProd && secret.length < 16) console.warn('Set a strong SESSION_SECRET before deployment.');
 
-const storageDir = path.resolve(process.env.RECEIPTS_DIR || path.resolve(__dirname, '../storage/receipts'));
-fs.mkdirSync(storageDir, { recursive: true, mode: 0o700 });
-fs.chmodSync(storageDir, 0o700);
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const receiptBucket = process.env.SUPABASE_STORAGE_BUCKET || 'receipts';
+const supabase = supabaseUrl && supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false, autoRefreshToken: false } })
+  : null;
+const receiptMimeTypes = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+
+async function storeReceipt(file) {
+  if (!supabase) throw Object.assign(new Error('فضای ذخیره‌سازی رسید تنظیم نشده است.'), { status: 503 });
+  const ext = detectImageExtension(file.buffer);
+  if (!ext || ext !== ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' })[file.mimetype]) {
+    throw Object.assign(new Error('محتوای فایل با فرمت تصویر انتخاب‌شده مطابقت ندارد.'), { status: 400 });
+  }
+  const key = crypto.randomUUID() + ext;
+  const { error } = await supabase.storage.from(receiptBucket).upload(key, file.buffer, {
+    contentType: receiptMimeTypes[ext], cacheControl: '0', upsert: false
+  });
+  if (error) throw Object.assign(new Error('ذخیره رسید انجام نشد؛ تنظیمات فضای ذخیره‌سازی را بررسی کنید.'), { status: 503 });
+  return key;
+}
+
+async function deleteReceipt(key) {
+  if (supabase && key) await supabase.storage.from(receiptBucket).remove([key]).catch(() => {});
+}
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: { directives: {
   defaultSrc: ["'self'"], scriptSrc: ["'self'", 'https://developer.eitaa.com'],
@@ -119,10 +141,7 @@ app.post('/api/auth/logout', csrf, (_req, res) => {
 });
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, storageDir),
-    filename: (_req, file, cb) => cb(null, crypto.randomUUID() + file.safeExt)
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
     const extByMime = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
@@ -133,12 +152,13 @@ const upload = multer({
 });
 app.post('/api/orders', auth, orderLimiter, csrf, upload.single('receipt'), async (req, res, next) => {
   let client;
+  let receiptKey = null;
   try {
     const views = Number(req.body.views);
     const channelUrl = String(req.body.channelUrl || '').trim();
     const adText = String(req.body.adText || '').trim();
     if (!req.file) throw Object.assign(new Error('تصویر رسید الزامی است.'), { status: 400 });
-    const actualExt = detectImageExtension(fs.readFileSync(req.file.path));
+    const actualExt = detectImageExtension(req.file.buffer);
     if (!actualExt || actualExt !== req.file.safeExt) throw Object.assign(new Error('محتوای فایل با فرمت تصویر انتخاب‌شده مطابقت ندارد.'), { status: 400 });
     if (!Number.isInteger(views) || views < 1000 || views > 200000 || views % 1000) throw Object.assign(new Error('تعداد بازدید باید بین ۱۰۰۰ تا ۲۰۰۰۰۰ و مضرب ۱۰۰۰ باشد.'), { status: 400 });
     if (!isEitaaChannelUrl(channelUrl)) throw Object.assign(new Error('لینک کانال باید از دامنهٔ رسمی ایتا باشد.'), { status: 400 });
@@ -148,18 +168,19 @@ app.post('/api/orders', auth, orderLimiter, csrf, upload.single('receipt'), asyn
     if (views < settings[0].min_views || views > settings[0].max_views) throw Object.assign(new Error('تعداد بازدید خارج از محدوده تنظیم‌شده است.'), { status: 400 });
     const rate = BigInt(settings[0].price_per_10000);
     const price = calculatePrice(rate, views);
+    receiptKey = await storeReceipt(req.file);
     client = await pool.connect();
     await client.query('BEGIN');
     const { rows } = await client.query(
       'INSERT INTO ad_orders(user_id,user_name,channel_url,ad_text,requested_views,quoted_price,price_per_10000_snapshot,receipt_path) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,status,requested_views,quoted_price,created_at',
-      [req.session.id, req.session.name || null, new URL(channelUrl).toString(), adText, views, price.toString(), rate.toString(), req.file.filename]
+      [req.session.id, req.session.name || null, new URL(channelUrl).toString(), adText, views, price.toString(), rate.toString(), receiptKey]
     );
     await client.query('INSERT INTO order_events(order_id,admin_username,old_status,new_status,note) VALUES($1,$2,NULL,$3,$4)', [rows[0].id, 'system', 'pending', 'سفارش توسط کاربر ثبت شد']);
     await client.query('COMMIT');
     res.status(201).json({ order: rows[0] });
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
+    if (receiptKey) await deleteReceipt(receiptKey);
     next(err);
   } finally { client?.release(); }
 });
@@ -179,11 +200,15 @@ app.get('/api/admin/orders/:id/receipt', auth, adminOnly, adminLimiter, async (r
   try {
     const { rows } = await pool.query('SELECT receipt_path FROM ad_orders WHERE id=$1', [req.params.id]);
     if (!rows[0]) return res.sendStatus(404);
-    const file = path.join(storageDir, path.basename(rows[0].receipt_path));
-    if (!fs.existsSync(file)) return res.sendStatus(404);
+    const key = rows[0].receipt_path;
+    if (!/^[0-9a-f-]{36}\\.(jpg|png|webp)$/i.test(key) || !supabase) return res.sendStatus(404);
+    const { data, error } = await supabase.storage.from(receiptBucket).download(key);
+    if (error || !data) return res.sendStatus(404);
+    const ext = path.extname(key).toLowerCase();
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, no-store');
-    res.type(path.extname(file)).sendFile(file);
+    res.setHeader('Content-Type', receiptMimeTypes[ext]);
+    res.send(Buffer.from(await data.arrayBuffer()));
   } catch (err) { next(err); }
 });
 app.patch('/api/admin/orders/:id', auth, adminOnly, adminLimiter, csrf, async (req, res, next) => {
