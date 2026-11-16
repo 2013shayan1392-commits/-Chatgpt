@@ -7,19 +7,20 @@
 - تعرفه اولیه ۹۰٬۰۰۰ تومان برای هر ۱۰٬۰۰۰ بازدید
 - ثبت رسید در Supabase Storage خصوصی؛ دریافت رسید فقط برای مدیر احراز هویت‌شده
 - ذخیره تعرفه زمان سفارش؛ تغییر تعرفه فقط روی سفارش‌های بعدی اثر دارد
+- نمایش اطلاعات پرداخت قابل تنظیم توسط مدیر؛ تا پیش از ثبت اطلاعات پرداخت، ثبت سفارش غیرفعال است
 - ورود مدیر، بررسی رسید، تغییر وضعیت، ثبت بازدید نهایی و تنظیم تعرفه
 - اعتبارسنجی امضای initData ایتا در سمت سرور
 
 ## نسخه آنلاین
 
-Edge Function نسخه ۲ با وضعیت ACTIVE روی پروژه Supabase مستقر شده است.
+Edge Function نسخه ۳ با وضعیت ACTIVE روی پروژه Supabase مستقر شده است.
 
 - **آدرس مینی‌اپ:** https://nvegaokijnrknjwctkbt.supabase.co/functions/v1/tabligh-yar
 - **آدرس سلامت:** https://nvegaokijnrknjwctkbt.supabase.co/functions/v1/tabligh-yar/api/health
 - **داشبورد پروژه:** https://supabase.com/dashboard/project/nvegaokijnrknjwctkbt
 - **تنظیم secrets:** https://supabase.com/dashboard/project/nvegaokijnrknjwctkbt/functions/secrets
 
-برای فعال‌شدن ورود واقعی و پنل مدیریت، این سه secret باید در داشبورد Supabase ثبت شوند:
+برای فعال‌شدن ورود واقعی و پنل مدیریت، این سه secret باید در داشبورد Supabase ثبت شوند. سپس مدیر از پنل وارد می‌شود و اطلاعات پرداخت و تعرفه را تنظیم می‌کند؛ بدون اطلاعات پرداخت، سفارش مشتری پذیرفته نمی‌شود:
 - `EITAA_BOT_TOKEN`
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
