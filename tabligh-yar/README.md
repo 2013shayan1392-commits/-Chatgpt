@@ -54,3 +54,13 @@ Edge Function نسخه ۳ با وضعیت ACTIVE روی پروژه Supabase مس
 - تغییر `ADMIN_PASSWORD` پس از ساخته‌شدن رکورد مدیر، هش موجود را خودکار عوض نمی‌کند؛ برای تغییر رمز مدیر باید رکورد هش‌شده به‌روزرسانی شود.
 - پلن رایگان Supabase سهمیه دارد و ممکن است پروژه کم‌فعالیت را متوقف کند؛ رایگان بودن دائمی و بدون محدودیت تضمین نمی‌شود.
 - قبل از استفاده واقعی، سلامت API، ورود واقعی ایتا، ثبت سفارش آزمایشی، مشاهده رسید از پنل مدیر و تغییر وضعیت را آزمایش کنید.
+
+
+## Owner and manager access
+
+- The account configured by `ADMIN_USERNAME` and `ADMIN_PASSWORD` is bootstrapped as the sole `owner`.
+- Only the owner can add or disable manager accounts, change pricing/payment instructions, or change order status.
+- Manager accounts are read-only: they can view orders and payment receipts, but cannot modify orders, settings, or other accounts.
+- Manager authorization is checked against the database on every protected request, so disabling an account blocks its existing sessions on the next request.
+- Manager creation and disable actions are written to `admin_audit_log`.
+- Keep the Supabase organization/project ownership and all server secrets under the owner's personal control. Never share the Supabase service-role key or Eitaa bot token with managers.
