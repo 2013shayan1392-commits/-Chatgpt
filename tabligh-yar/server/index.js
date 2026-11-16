@@ -25,7 +25,8 @@ if (isProd && (secret.length < 32 || !process.env.EITAA_BOT_TOKEN || !process.en
 if (!isProd && secret.length < 16) console.warn('Set a strong SESSION_SECRET before deployment.');
 
 const storageDir = path.resolve(__dirname, '../storage/receipts');
-fs.mkdirSync(storageDir, { recursive: true });
+fs.mkdirSync(storageDir, { recursive: true, mode: 0o700 });
+fs.chmodSync(storageDir, 0o700);
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: { directives: {
   defaultSrc: ["'self'"], scriptSrc: ["'self'", 'https://developer.eitaa.com'],
@@ -195,6 +196,7 @@ app.get('/api/admin/orders/:id/receipt', auth, adminOnly, adminLimiter, async (r
     const file = path.join(storageDir, path.basename(rows[0].receipt_path));
     if (!fs.existsSync(file)) return res.sendStatus(404);
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.type(path.extname(file)).sendFile(file);
   } catch (err) { next(err); }
 });
@@ -231,7 +233,8 @@ app.patch('/api/admin/settings', auth, adminOnly, adminLimiter, csrf, async (req
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  if (err instanceof multer.MulterError) return res.status(400).json({ error: 'فایل رسید بیش از حد مجاز است یا معتبر نیست.' });
+  if (err instanceof multer.MulterError) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'حجم رسید حداکثر ۵ مگابایت است.' : 'فایل رسید بیش از حد مجاز است یا معتبر نیست.' });
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'ساختار درخواست JSON نامعتبر است.' });
   if (err.status === 400) return res.status(400).json({ error: err.message });
   if (String(err.message || '').startsWith('فقط تصویر')) return res.status(400).json({ error: err.message });
   res.status(500).json({ error: 'خطای داخلی سرور.' });
