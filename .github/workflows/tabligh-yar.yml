@@ -1,6 +1,7 @@
 name: Tabligh-Yar checks
 
 on:
+  workflow_dispatch:
   push:
     branches: [tabligh-yar]
     paths:
