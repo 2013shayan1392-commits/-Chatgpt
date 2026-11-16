@@ -66,3 +66,10 @@ Edge Function نسخه ۳ با وضعیت ACTIVE روی پروژه Supabase مس
 - Manager authorization is checked against the database on every protected request, so disabling an account blocks its existing sessions on the next request.
 - Manager creation and disable actions are written to `admin_audit_log`.
 - Keep the Supabase organization/project ownership and all server secrets under the owner's personal control. Never share the Supabase service-role key or Eitaa bot token with managers.
+
+
+### Notification secrets
+
+- `EITAA_BOT_TOKEN`: verifies Eitaa Mini App `initData`.
+- `EITAAYAR_API_TOKEN`: sends manager notifications and receipt files through EitaaYar.
+- Keep both values in Supabase Function Secrets. Do not put either in browser code or share them with managers.
