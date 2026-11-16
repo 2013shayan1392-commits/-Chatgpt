@@ -15,16 +15,21 @@ import { isEitaaChannelUrl, detectImageExtension, calculatePrice, verifyEitaaIni
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : undefined });
+// Let node-postgres honor sslmode from DATABASE_URL. Render's internal Postgres URL
+// does not require TLS; external URLs include sslmode=require.
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 10, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000 });
 const PORT = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
 const secret = process.env.SESSION_SECRET || '';
-if (isProd && (secret.length < 32 || !process.env.EITAA_BOT_TOKEN || !process.env.APP_ORIGIN?.startsWith('https://'))) {
-  throw new Error('Production requires SESSION_SECRET (32+ chars), EITAA_BOT_TOKEN and HTTPS APP_ORIGIN.');
+if (isProd && (secret.length < 32 || !process.env.EITAA_BOT_TOKEN)) {
+  throw new Error('Production requires SESSION_SECRET (32+ chars) and EITAA_BOT_TOKEN.');
+}
+if (isProd && process.env.APP_ORIGIN && !process.env.APP_ORIGIN.startsWith('https://')) {
+  throw new Error('APP_ORIGIN must use HTTPS when provided.');
 }
 if (!isProd && secret.length < 16) console.warn('Set a strong SESSION_SECRET before deployment.');
 
-const storageDir = path.resolve(__dirname, '../storage/receipts');
+const storageDir = path.resolve(process.env.RECEIPTS_DIR || path.resolve(__dirname, '../storage/receipts'));
 fs.mkdirSync(storageDir, { recursive: true, mode: 0o700 });
 fs.chmodSync(storageDir, 0o700);
 app.disable('x-powered-by');
