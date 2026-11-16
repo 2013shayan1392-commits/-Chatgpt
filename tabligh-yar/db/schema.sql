@@ -20,6 +20,7 @@ ALTER TABLE admins
   ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'manager',
   ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE admins ADD COLUMN IF NOT EXISTS eitaa_chat_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS admins_single_owner_idx ON admins ((role)) WHERE role = 'owner';
 ALTER TABLE admins DROP CONSTRAINT IF EXISTS admins_role_check;
 ALTER TABLE admins ADD CONSTRAINT admins_role_check CHECK (role IN ('owner','manager'));
 
