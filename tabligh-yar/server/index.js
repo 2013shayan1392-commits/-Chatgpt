@@ -106,7 +106,7 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/csrf', (_req, res) => res.json({ ok: true, csrfToken: setCsrf(res) }));
 app.get('/api/config', async (_req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT price_per_10000,min_views,max_views FROM app_settings WHERE id=1');
+    const { rows } = await pool.query('SELECT price_per_10000,min_views,max_views,payment_instructions FROM app_settings WHERE id=1');
     if (!rows[0]) return res.status(503).json({ error: 'تنظیمات اولیه پایگاه داده موجود نیست؛ schema.sql را اجرا کنید.' });
     res.json(rows[0]);
   } catch (err) { next(err); }
@@ -166,6 +166,7 @@ app.post('/api/orders', auth, orderLimiter, csrf, upload.single('receipt'), asyn
     const { rows: settings } = await pool.query('SELECT price_per_10000,min_views,max_views FROM app_settings WHERE id=1');
     if (!settings[0]) throw Object.assign(new Error('تنظیمات اولیه پایگاه داده موجود نیست.'), { status: 503 });
     if (views < settings[0].min_views || views > settings[0].max_views) throw Object.assign(new Error('تعداد بازدید خارج از محدوده تنظیم‌شده است.'), { status: 400 });
+    if (!String(settings[0].payment_instructions || '').trim()) throw Object.assign(new Error('اطلاعات پرداخت هنوز توسط مدیر ثبت نشده است؛ فعلاً امکان ثبت سفارش وجود ندارد.'), { status: 503 });
     const rate = BigInt(settings[0].price_per_10000);
     const price = calculatePrice(rate, views);
     receiptKey = await storeReceipt(req.file);
@@ -236,8 +237,10 @@ app.patch('/api/admin/orders/:id', auth, adminOnly, adminLimiter, csrf, async (r
 app.patch('/api/admin/settings', auth, adminOnly, adminLimiter, csrf, async (req, res, next) => {
   try {
     const rate = Number(req.body?.pricePer10000);
+    const paymentInstructions = typeof req.body?.paymentInstructions === 'string' ? req.body.paymentInstructions.trim() : '';
     if (!Number.isSafeInteger(rate) || rate < 1 || rate > 1000000000) return res.status(400).json({ error: 'تعرفه نامعتبر است.' });
-    const { rows } = await pool.query('UPDATE app_settings SET price_per_10000=$1,updated_at=NOW() WHERE id=1 RETURNING price_per_10000,min_views,max_views', [rate]);
+    if (paymentInstructions.length > 2000) return res.status(400).json({ error: 'اطلاعات پرداخت حداکثر ۲۰۰۰ نویسه است.' });
+    const { rows } = await pool.query('UPDATE app_settings SET price_per_10000=$1,payment_instructions=$2,updated_at=NOW() WHERE id=1 RETURNING price_per_10000,min_views,max_views,payment_instructions', [rate, paymentInstructions]);
     res.json({ settings: rows[0] });
   } catch (err) { next(err); }
 });
