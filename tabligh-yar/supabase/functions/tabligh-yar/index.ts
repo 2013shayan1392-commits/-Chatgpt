@@ -152,7 +152,7 @@ async function deleteReceipt(key) {
   if (key) await supabase.storage.from(bucket).remove([key]).catch(() => {});
 }
 async function notifyManagersOfReceipt(order, receiptKey) {
-  const token = Deno.env.get("EITAA_BOT_TOKEN") || "";
+  const token = Deno.env.get("EITAAYAR_API_TOKEN") || "";
   if (!token || !receiptKey) return;
   const { data: managers, error: managerError } = await supabase.from("admins")
     .select("username,eitaa_chat_id")
