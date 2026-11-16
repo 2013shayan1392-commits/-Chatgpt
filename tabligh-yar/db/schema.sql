@@ -42,5 +42,22 @@ CREATE TABLE IF NOT EXISTS order_events (
   note TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS ad_orders_user_created_idx ON ad_orders(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ad_orders_status_created_idx ON ad_orders(status, created_at DESC);
+
+-- Keep all application tables closed to public Data API roles.
+-- The backend connects server-side with its database connection string.
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ad_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_events ENABLE ROW LEVEL SECURITY;
+
+-- Receipts are private and restricted to image formats accepted by the app.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('receipts', 'receipts', false, 5242880, ARRAY['image/jpeg','image/png','image/webp'])
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  public = false,
+  file_size_limit = 5242880,
+  allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp'];
