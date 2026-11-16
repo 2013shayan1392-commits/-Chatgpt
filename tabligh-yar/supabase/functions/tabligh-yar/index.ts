@@ -195,6 +195,12 @@ async function ensureAdmin() {
   const username = Deno.env.get("ADMIN_USERNAME") || "";
   const password = Deno.env.get("ADMIN_PASSWORD") || "";
   if (!username || !password) throw Object.assign(new Error("اطلاعات مالک در تنظیمات محرمانه سرور ثبت نشده است."), { status: 503 });
+  // Enforce exactly one active owner identity: rotate/demote any previous owner
+  // before bootstrapping the username configured in the private server secrets.
+  const { error: demoteError } = await supabase.from("admins")
+    .update({ role: "manager", is_active: false })
+    .eq("role", "owner").neq("username", username);
+  if (demoteError) throw Object.assign(new Error("به‌روزرسانی مالک قبلی انجام نشد."), { status: 503 });
   const hash = await bcrypt.hash(password, 12);
   const { error } = await supabase.from("admins").upsert(
     { username, password_hash: hash, role: "owner", is_active: true },
