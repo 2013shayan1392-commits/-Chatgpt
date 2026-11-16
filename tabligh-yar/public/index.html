@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101827"><title>تبلیغ‌یار</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://developer.eitaa.com/eitaa-web-app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header><div class="mark">ت</div><div><h1>تبلیغ‌یار</h1><p>ثبت و پیگیری سفارش تبلیغات کانال</p></div></header>
+    <section class="panel">
+      <h2>محاسبه هزینه</h2>
+      <label for="views">تعداد بازدید درخواستی</label>
+      <input id="views" type="number" min="1000" max="200000" step="1000" value="10000">
+      <div class="price"><span>هزینه تقریبی</span><strong id="price">۹۰٬۰۰۰ تومان</strong></div>
+      <p class="hint">تعرفه فعلی: ۹۰٬۰۰۰ تومان به ازای هر ۱۰٬۰۰۰ بازدید</p>
+    </section>
+    <section class="panel">
+      <h2>ثبت سفارش</h2>
+      <form id="orderForm">
+        <label for="channelUrl">لینک کانال ایتا</label><input id="channelUrl" name="channelUrl" type="url" placeholder="https://eitaa.com/..." required>
+        <label for="adText">متن تبلیغ</label><textarea id="adText" name="adText" rows="5" minlength="5" maxlength="5000" required></textarea>
+        <label for="receipt">تصویر رسید پرداخت (JPG، PNG یا WEBP؛ حداکثر ۵ مگابایت)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,image/webp" required>
+        <button type="submit">ثبت سفارش</button>
+      </form>
+    </section>
+    <section class="panel"><div class="row"><h2>سفارش‌های من</h2><button id="refresh" class="secondary" type="button">به‌روزرسانی</button></div><div id="orders" class="orders">برای مشاهده سفارش‌ها وارد ایتا شوید.</div></section>
+    <section class="panel">
+      <button id="adminToggle" class="secondary" type="button">ورود مدیر</button>
+      <form id="adminForm" class="hidden">
+        <label for="adminUser">نام کاربری مدیر</label><input id="adminUser" autocomplete="username" required>
+        <label for="adminPass">رمز عبور</label><input id="adminPass" type="password" autocomplete="current-password" required>
+        <button type="submit">ورود به پنل مدیریت</button>
+      </form>
+      <div id="adminPanel" class="hidden"><div class="row"><h2>مدیریت سفارش‌ها</h2><button id="adminRefresh" class="secondary" type="button">به‌روزرسانی</button></div>
+        <label for="newRate">تعرفه هر ۱۰٬۰۰۰ بازدید (تومان)</label><div class="row"><input id="newRate" type="number" min="1"><button id="saveRate" type="button">ذخیره تعرفه</button></div>
+        <div id="adminOrders" class="orders"></div>
+      </div>
+    </section>
+    <p id="message" role="status" aria-live="polite"></p>
+    <footer>پرداخت و انتشار تبلیغ پس از بررسی دستی مدیر انجام می‌شود.</footer>
+  </main>
+  <script src="/app.js"></script>
+</body></html>
