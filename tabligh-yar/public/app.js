@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const API_BASE = window.TABLIGH_API_BASE || '';
-let csrfToken = '', settings = { price_per_10000: 90000, min_views: 1000, max_views: 200000 }, eitaaUser = false;
+let csrfToken = '', settings = { price_per_10000: 90000, min_views: 1000, max_views: 200000, payment_instructions: '' }, eitaaUser = false;
 const money = n => Number(n).toLocaleString('fa-IR') + ' تومان';
 const numberFa = n => Number(n).toLocaleString('fa-IR');
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -17,7 +17,13 @@ async function refreshCsrf() { const d = await api('/api/csrf'); csrfToken = d.c
 async function loadSettings() {
   settings = await api('/api/config');
   $('newRate').value = settings.price_per_10000;
+  $('paymentInstructionsInput').value = settings.payment_instructions || '';
+  updatePaymentInstructions();
   updatePrice();
+}
+function updatePaymentInstructions() {
+  const value = String(settings.payment_instructions || '').trim();
+  $('paymentInstructions').textContent = value || 'اطلاعات پرداخت هنوز توسط مدیر ثبت نشده است. تا زمان ثبت اطلاعات، رسید ارسال نکنید.';
 }
 function updatePrice() {
   const views = Number($('views').value) || 0;
@@ -45,6 +51,7 @@ $('views').addEventListener('input', updatePrice);
 $('orderForm').addEventListener('submit', async e => {
   e.preventDefault(); $('message').textContent = 'در حال ثبت سفارش…';
   try {
+    if (!String(settings.payment_instructions || '').trim()) throw new Error('اطلاعات پرداخت هنوز توسط مدیر ثبت نشده است؛ فعلاً امکان ثبت سفارش وجود ندارد.');
     if (!eitaaUser && !(await signInEitaa())) throw new Error('برای ثبت سفارش، مینی‌اپ را از داخل ایتا باز کنید.');
     const file = $('receipt').files[0];
     if (!file) throw new Error('تصویر رسید را انتخاب کنید.');
@@ -95,8 +102,8 @@ $('adminLogout').onclick = async () => {
 };
 $('saveRate').onclick = async () => {
   try {
-    const r = await api('/api/admin/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({pricePer10000:Number($('newRate').value)})});
-    settings=r.settings; updatePrice(); $('message').textContent='تعرفه جدید ذخیره شد.';
+    const r = await api('/api/admin/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({pricePer10000:Number($('newRate').value),paymentInstructions:$('paymentInstructionsInput').value})});
+    settings=r.settings; $('paymentInstructionsInput').value=settings.payment_instructions || ''; updatePaymentInstructions(); updatePrice(); $('message').textContent='تنظیمات ذخیره شد.';
   } catch(err) { $('message').textContent=err.message; }
 };
 (async () => {
