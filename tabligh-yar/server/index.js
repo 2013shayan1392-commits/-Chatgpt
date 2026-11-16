@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { isEitaaChannelUrl, detectImageExtension, calculatePrice } from './validation.js';
+import { isEitaaChannelUrl, detectImageExtension, calculatePrice, verifyEitaaInitData } from './validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -68,25 +68,6 @@ function adminOnly(req, res, next) {
   if (req.session?.role !== 'admin') return res.status(403).json({ error: 'دسترسی مدیر لازم است.' });
   next();
 }
-function verifyEitaaInitData(initData) {
-  if (!process.env.EITAA_BOT_TOKEN || typeof initData !== 'string' || !initData) return null;
-  const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  const authDate = Number(params.get('auth_date'));
-  const now = Math.floor(Date.now() / 1000);
-  if (!hash || !Number.isFinite(authDate) || authDate > now + 30 || now - authDate > 3600) return null;
-  params.delete('hash');
-  const checkString = [...params.entries()].map(([key, value]) => key + '=' + value).sort().join('\n');
-  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(process.env.EITAA_BOT_TOKEN).digest();
-  const calculated = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
-  const a = Buffer.from(calculated, 'hex'), b = Buffer.from(hash, 'hex');
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try {
-    const user = JSON.parse(params.get('user') || '{}');
-    if (!user.id) return null;
-    return { id: String(user.id), name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'کاربر ایتا' };
-  } catch { return null; }
-}
 function safeHttpsUrl(value) {
   try { const url = new URL(value); return url.protocol === 'https:'; } catch { return false; }
 }
@@ -104,7 +85,7 @@ app.get('/api/config', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 app.post('/api/auth/eitaa', authLimiter, csrf, (req, res) => {
-  const user = verifyEitaaInitData(req.body?.initData);
+  const user = verifyEitaaInitData(req.body?.initData, process.env.EITAA_BOT_TOKEN);
   if (!user) {
     if (!isProd && process.env.DEV_ALLOW_TEST_USER === 'true') {
       const test = { id: 'local-test-user', name: 'کاربر آزمایشی' };
