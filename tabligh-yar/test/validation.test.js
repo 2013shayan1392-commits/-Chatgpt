@@ -25,3 +25,39 @@ test('calculates the quoted price using integer arithmetic and rounding', () => 
   assert.equal(calculatePrice(90005, 1000), 9001n);
   assert.throws(() => calculatePrice(0, 1000), RangeError);
 });
+
+import { createHmac } from 'node:crypto';
+import { verifyEitaaInitData } from '../server/validation.js';
+
+function signedInitData(fields, token) {
+  const params = new URLSearchParams(fields);
+  const checkString = [...params.entries()].map(([key, value]) => key + '=' + value).sort().join('\n');
+  const secretKey = createHmac('sha256', 'WebAppData').update(token).digest();
+  const hash = createHmac('sha256', secretKey).update(checkString).digest('hex');
+  params.set('hash', hash);
+  return params.toString();
+}
+
+test('validates signed Eitaa initData and returns only verified user data', () => {
+  const now = 2000000000;
+  const token = 'test-bot-token';
+  const raw = signedInitData([
+    ['auth_date', String(now - 60)],
+    ['query_id', 'session-123'],
+    ['user', JSON.stringify({id: 1234567890123, first_name: 'Shayan'})]
+  ], token);
+  assert.deepEqual(verifyEitaaInitData(raw, token, now), {id:'1234567890123',name:'Shayan'});
+  assert.equal(verifyEitaaInitData(raw + '&extra=modified', token, now), null);
+  assert.equal(verifyEitaaInitData(raw, '', now), null);
+});
+
+test('rejects expired, future-dated and duplicate initData parameters', () => {
+  const now = 2000000000;
+  const token = 'test-bot-token';
+  const expired = signedInitData([['auth_date',String(now-3601)],['user','{"id":1}']],token);
+  const future = signedInitData([['auth_date',String(now+31)],['user','{"id":1}']],token);
+  const valid = signedInitData([['auth_date',String(now-1)],['user','{"id":1}']],token);
+  assert.equal(verifyEitaaInitData(expired,token,now),null);
+  assert.equal(verifyEitaaInitData(future,token,now),null);
+  assert.equal(verifyEitaaInitData(valid+'&auth_date='+String(now-1),token,now),null);
+});
