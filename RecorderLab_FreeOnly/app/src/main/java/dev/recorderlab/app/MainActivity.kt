@@ -10,15 +10,29 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import rikka.shizuku.Shizuku
 import java.io.File
 class MainActivity:Activity(){
  private lateinit var status:TextView;private lateinit var source:Spinner;private lateinit var engine:Spinner;private lateinit var start:Button;private lateinit var stop:Button
  private var player:MediaPlayer?=null
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);buildUi();refresh()}
+ private val SHIZUKU_REQUEST_CODE=7301
+ private lateinit var shizukuStatus:TextView
+ private lateinit var shizukuGrant:Button
+ private val binderReceived=Shizuku.OnBinderReceivedListener{updateShizuku()}
+ private val binderDead=Shizuku.OnBinderDeadListener{updateShizuku()}
+ private val permissionResult=Shizuku.OnRequestPermissionResultListener{code,result->
+  if(code==SHIZUKU_REQUEST_CODE){Toast.makeText(this,if(result==PackageManager.PERMISSION_GRANTED)"مجوز Shizuku تأیید شد" else "مجوز Shizuku رد شد",Toast.LENGTH_LONG).show();updateShizuku()}
+ }
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);buildUi();registerShizuku();refresh()}
+ override fun onResume(){super.onResume();updateShizuku()}
  private fun buildUi(){
   val scroll=ScrollView(this);val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(24,24,24,24)};scroll.addView(root)
   fun label(s:String,size:Float=16f){root.addView(TextView(this).apply{text=s;textSize=size;setPadding(0,10,0,8)})}
   label("RecorderLab",28f);label("ضبط صدا و آزمایش منابع صوتی Android",16f)
+  label("اتصال Shizuku",19f)
+  shizukuStatus=TextView(this).apply{textSize=14f};root.addView(shizukuStatus)
+  shizukuGrant=Button(this).apply{text="درخواست مجوز Shizuku";setOnClickListener{requestShizuku()}};root.addView(shizukuGrant,LinearLayout.LayoutParams(-1,-2))
+  root.addView(Button(this).apply{text="بازکردن Shizuku Manager";setOnClickListener{val i=packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api");if(i!=null)startActivity(i) else Toast.makeText(this@MainActivity,"Shizuku Manager نصب نیست",Toast.LENGTH_LONG).show()}},LinearLayout.LayoutParams(-1,-2))
   label("توجه: دسترسی به صدای تماس توسط Android یا سازنده ممکن است مسدود شود. تشخیص وضعیت تماس به معنی ضبط صدای دو طرف نیست.")
   source=Spinner(this);source.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,listOf("میکروفون","تماس کامل — VOICE_CALL","صدای ارسالی — VOICE_UPLINK","صدای دریافتی — VOICE_DOWNLINK","ارتباط صوتی — VOICE_COMMUNICATION"));root.addView(source)
   engine=Spinner(this);engine.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,listOf("MediaRecorder AAC / M4A","AudioRecord PCM / WAV","AudioRecord + MediaCodec AAC / M4A"));root.addView(engine)
@@ -53,5 +67,8 @@ class MainActivity:Activity(){
  }
  private fun playFile(file:File){runCatching{player?.release();player=MediaPlayer().apply{setDataSource(file.absolutePath);prepare();start()}}.onFailure{status.text="پخش ناموفق: ${it.localizedMessage}"}}
  private fun shareFile(file:File){runCatching{val uri=FileProvider.getUriForFile(this,"${packageName}.fileprovider",file);startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(if(file.extension=="wav")"audio/wav" else "audio/mp4").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),"اشتراک فایل ضبط‌شده"))}.onFailure{status.text="اشتراک ناموفق: ${it.localizedMessage}"}}
- override fun onDestroy(){player?.release();player=null;super.onDestroy()}
+ private fun registerShizuku(){try{Shizuku.addBinderReceivedListenerSticky(binderReceived);Shizuku.addBinderDeadListener(binderDead);Shizuku.addRequestPermissionResultListener(permissionResult)}catch(_:Throwable){};updateShizuku()}
+ private fun updateShizuku(){if(!::shizukuStatus.isInitialized)return;val connected=try{Shizuku.pingBinder()}catch(_:Throwable){false};val granted=connected&&try{Shizuku.checkSelfPermission()==PackageManager.PERMISSION_GRANTED}catch(_:Throwable){false};shizukuStatus.text=when{!connected->"سرویس Shizuku متصل نیست؛ ابتدا آن را در برنامه Shizuku راه‌اندازی کنید.";granted->"متصل و مجاز ✓";else->"سرویس متصل است؛ مجوز برنامه هنوز صادر نشده است."};shizukuGrant.isEnabled=connected&&!granted;shizukuGrant.text=if(granted)"مجوز صادر شده" else "درخواست مجوز Shizuku"}
+ private fun requestShizuku(){try{if(!Shizuku.pingBinder()){updateShizuku();return};if(Shizuku.checkSelfPermission()==PackageManager.PERMISSION_GRANTED){updateShizuku()}else Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)}catch(e:Throwable){Toast.makeText(this,"خطای Shizuku: "+e.message,Toast.LENGTH_LONG).show()}}
+ override fun onDestroy(){try{Shizuku.removeBinderReceivedListener(binderReceived);Shizuku.removeBinderDeadListener(binderDead);Shizuku.removeRequestPermissionResultListener(permissionResult)}catch(_:Throwable){};player?.release();player=null;super.onDestroy()}
 }
