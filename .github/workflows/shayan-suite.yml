@@ -1,0 +1,42 @@
+name: Shayan App Hub APK
+
+on:
+  push:
+    branches: [ brevent-killapps-suite ]
+    paths:
+      - "suite/**"
+      - "settings.gradle.kts"
+      - "build.gradle.kts"
+      - ".github/workflows/shayan-suite.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build App Hub debug APK
+        run: gradle :suite:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shayan-App-Hub-debug
+          path: suite/build/outputs/apk/debug/suite-debug.apk
+          if-no-files-found: error
+          retention-days: 14
