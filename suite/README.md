@@ -11,7 +11,7 @@ The home screen and its card order remain in place. Selecting a card opens an in
 ### KillApps core
 - Lists launchable, user-installed apps.
 - Supports search and multi-selection.
-- If Shizuku is running and Shayan Suite is authorized, sends am force-stop commands through the ADB identity.
+- If Shizuku is running and Shayan Suite is authorized, sends am force-stop commands through a dedicated Shizuku UserService.
 - Without Shizuku, requests background-process termination through Android's public ActivityManager API. This fallback is not equivalent to Force stop and is restricted on newer Android versions.
 
 ### Brevent core
@@ -24,7 +24,7 @@ The home screen and its card order remain in place. Selecting a card opens an in
 
 Shizuku is optional for the KillApps fallback, but required for full Force stop and the Brevent AppOps actions. The user must start Shizuku and explicitly grant Shayan Suite permission. On non-rooted devices, Shizuku runs with ADB privileges, not root privileges. The project does not request root access.
 
-Shizuku API 13.1.5 is used. The API's newProcess method is deprecated upstream; this implementation isolates it in ShizukuShell so it can be migrated to a UserService later.
+The app uses Shizuku API 13.1.5 and a separate AIDL UserService process to execute explicitly requested commands.
 
 ## Scope and compatibility
 
