@@ -95,6 +95,7 @@ private enum class KillAppsFilter {
 class CleanKillAppsActivity : ComponentActivity() {
     private val resumeVersion = mutableStateOf(0)
     private val serviceStatus = mutableStateOf("")
+    private val operationRunning = mutableStateOf(false)
     private val repository by lazy { KillAppsRepository(this) }
     private var statusReceiverRegistered = false
 
@@ -104,6 +105,10 @@ class CleanKillAppsActivity : ComponentActivity() {
             serviceStatus.value = intent.getStringExtra(
                 CleanKillAppsAccessibilityService.EXTRA_MESSAGE
             ).orEmpty()
+            operationRunning.value = !intent.getBooleanExtra(
+                CleanKillAppsAccessibilityService.EXTRA_FINISHED,
+                false
+            )
         }
     }
 
@@ -115,6 +120,7 @@ class CleanKillAppsActivity : ComponentActivity() {
                     repository = repository,
                     resumeVersion = resumeVersion.value,
                     serviceStatus = serviceStatus.value,
+                    operationRunning = operationRunning.value,
                     onBack = { finish() }
                 )
             }
@@ -276,6 +282,7 @@ private fun CleanKillAppsScreen(
     repository: KillAppsRepository,
     resumeVersion: Int,
     serviceStatus: String,
+    operationRunning: Boolean,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -588,6 +595,16 @@ private fun CleanKillAppsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        if (operationRunning) {
+            OutlinedButton(
+                onClick = { CleanKillAppsAccessibilityService.cancelCurrent() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.Close, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("لغو عملیات")
+            }
         }
 
         if (filter == KillAppsFilter.CUSTOM) {
