@@ -9,9 +9,9 @@ object KillAppsEngine {
         require(packages.isNotEmpty()) { "No applications selected." }
         val commands = packages.sorted().map { packageName ->
             require(isSafePackageName(packageName)) { "Invalid package name." }
-            "am force-stop --user current " + packageName
+            "if am force-stop --user current " + packageName + " >/dev/null 2>&1; then echo SHAYAN_OK:" + packageName + "; else echo SHAYAN_FAIL:" + packageName + "; fi"
         }
-        return "set -e\n" + commands.joinToString("\n")
+        return commands.joinToString("\n")
     }
 
     private fun isSafePackageName(value: String): Boolean {
