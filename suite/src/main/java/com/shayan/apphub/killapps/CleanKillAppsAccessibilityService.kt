@@ -189,14 +189,18 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
             val root = rootInActiveWindow
             if (root != null) {
                 val text = collectText(root).joinToString(" ").lowercase()
-                if (isConfirmationPrompt(text) && !confirmationAccepted) {
-                    val confirm = findNode(root) { node ->
-                        nodeText(node) in setOf("force stop", "ok", "yes", "stop", "توقف اجباری", "تأیید", "تایید", "بله", "موافق")
+                if (isConfirmationPrompt(text)) {
+                    if (!confirmationAccepted) {
+                        val confirm = findNode(root) { node ->
+                            nodeText(node) in setOf("force stop", "ok", "yes", "stop", "توقف اجباری", "تأیید", "تایید", "بله", "موافق")
+                        }
+                        if (confirm != null && clickNode(confirm)) {
+                            confirmationAccepted = true
+                            resultChecks = 0
+                        }
                     }
-                    if (confirm != null && clickNode(confirm)) {
-                        confirmationAccepted = true
-                        resultChecks = 0
-                    }
+                    // Wait until the system confirmation sheet disappears before
+                    // inspecting the underlying App info page for a disabled button.
                 } else {
                     val button = findNode(root) { isForceStopButton(it) }
                     if (button != null && !button.isEnabled) {
