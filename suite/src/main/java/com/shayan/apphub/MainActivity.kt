@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var shizukuRunning by mutableStateOf(false)
     private var shizukuGranted by mutableStateOf(false)
+    private var accessibilityEnabled by mutableStateOf(false)
     private var operationMessage by mutableStateOf("")
     private var managedPackages by mutableStateOf<Set<String>>(emptySet())
 
@@ -106,6 +107,7 @@ class MainActivity : ComponentActivity() {
         managedPackages = preferences.getStringSet("packages", emptySet())?.toSet() ?: emptySet()
         refreshInstalledApps()
         refreshShizukuState()
+        refreshAccessibilityState()
 
         setContent {
             val dark = isSystemInDarkTheme()
@@ -152,7 +154,7 @@ class MainActivity : ComponentActivity() {
                                 managedPackages = emptySet(),
                                 onBack = { currentPage = SuitePage.HOME },
                                 onConnect = ::connectShizuku,
-                                accessibilityEnabled = isKillAppsAccessibilityEnabled(),
+                                accessibilityEnabled = accessibilityEnabled,
                                 onEnableAccessibility = ::openAccessibilitySettings,
                                 onStop = ::stopWithKillApps
                             )
@@ -194,6 +196,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshShizukuState()
+        refreshAccessibilityState()
     }
 
     private fun refreshShizukuState() {
@@ -264,6 +267,10 @@ class MainActivity : ComponentActivity() {
         return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
     }
 
+    private fun refreshAccessibilityState() {
+        accessibilityEnabled = isKillAppsAccessibilityEnabled()
+    }
+
     private fun openAccessibilitySettings() {
         try {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -279,7 +286,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (isKillAppsAccessibilityEnabled()) {
+        if (accessibilityEnabled || isKillAppsAccessibilityEnabled()) {
             val started = KillAppsAccessibilityService.start(this, packages.toList()) { message ->
                 operationMessage = message
             }
