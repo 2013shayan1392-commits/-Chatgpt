@@ -23,6 +23,8 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
     private var activeLabel: String = ""
     private var stage = Stage.OPENING_INFO
     private var stopButtonClicked = false
+    private var confirmationAccepted = false
+    private var resultChecks = 0
     private var completed = 0
     private var total = 0
     private var running = false
@@ -70,6 +72,8 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
         activeLabel = labels[nextPackage] ?: nextPackage
         stage = Stage.OPENING_INFO
         stopButtonClicked = false
+        confirmationAccepted = false
+        resultChecks = 0
         publish("بازکردن تنظیمات برنامه: " + activeLabel)
 
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -107,10 +111,14 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
                     "توقف اجباری", "تأیید", "تایید", "بله", "موافق"
                 )
             }
-            if (confirm != null && clickNode(confirm)) {
+            if (confirm != null && !confirmationAccepted && clickNode(confirm)) {
+                confirmationAccepted = true
                 stage = Stage.WAITING_FOR_RESULT
+                resultChecks = 0
                 publish("تأیید توقف: " + activeLabel)
-                scheduleResultCheck(1100)
+                scheduleResultCheck(900)
+            } else if (confirmationAccepted) {
+                scheduleResultCheck(700)
             }
             return
         }
@@ -149,10 +157,16 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
             "stop",
             "توقف اجباری",
             "توقف اجباری",
-            "توقف"
+            "متوقف کردن اجباری",
+            "توقف",
+            "zorla durdur",
+            "forzar detención",
+            "forçar parada",
+            "erzwingen beenden",
+            "arrêter de force"
         )
-        val idMatch = viewId.contains("force_stop") || viewId.contains("forceStop".lowercase())
-        return node.isEnabled && (labelMatch || idMatch)
+        val idMatch = viewId.contains("force_stop") || viewId.contains("force-stop")
+        return labelMatch || idMatch
     }
 
     private fun isConfirmationPrompt(text: String): Boolean {
@@ -170,28 +184,33 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
     private fun scheduleResultCheck(delay: Long) {
         resultRunnable?.let(handler::removeCallbacks)
         resultRunnable = Runnable {
+            if (!running || activePackage == null) return@Runnable
+
             val root = rootInActiveWindow
             if (root != null) {
                 val text = collectText(root).joinToString(" ").lowercase()
-                if (isConfirmationPrompt(text)) {
-                    inspectActiveWindow()
-                    return@Runnable
-                }
-                val button = findNode(root) { node ->
-                    val id = try {
-                        node.viewIdResourceName.orEmpty().lowercase()
-                    } catch (_: Exception) {
-                        ""
+                if (isConfirmationPrompt(text) && !confirmationAccepted) {
+                    val confirm = findNode(root) { node ->
+                        nodeText(node) in setOf("force stop", "ok", "yes", "stop", "توقف اجباری", "تأیید", "تایید", "بله", "موافق")
                     }
-                    id.contains("force_stop") || nodeText(node) == "force stop" || nodeText(node) == "توقف اجباری"
-                }
-                if (button != null && !button.isEnabled) {
-                    finishActive(true, "توقف " + activeLabel + " تأیید شد.")
-                    return@Runnable
+                    if (confirm != null && clickNode(confirm)) {
+                        confirmationAccepted = true
+                        resultChecks = 0
+                    }
+                } else {
+                    val button = findNode(root) { isForceStopButton(it) }
+                    if (button != null && !button.isEnabled) {
+                        finishActive(true, "وضعیت توقف " + activeLabel + " در تنظیمات تأیید شد.")
+                        return@Runnable
+                    }
                 }
             }
-            if (stopButtonClicked) {
-                finishActive(true, "درخواست توقف " + activeLabel + " انجام شد.")
+
+            resultChecks += 1
+            if (resultChecks <= 4) {
+                scheduleResultCheck(750)
+            } else {
+                finishActive(false, "سیستم نتیجهٔ توقف " + activeLabel + " را تأیید نکرد؛ مورد ناموفق ثبت شد.")
             }
         }
         handler.postDelayed(resultRunnable!!, delay)
@@ -204,6 +223,8 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
         completed = (completed + 1).coerceAtMost(total)
         activePackage = null
         stopButtonClicked = false
+        confirmationAccepted = false
+        resultChecks = 0
         publish(message)
         performGlobalAction(GLOBAL_ACTION_BACK)
         handler.postDelayed({ beginNext() }, 550)
