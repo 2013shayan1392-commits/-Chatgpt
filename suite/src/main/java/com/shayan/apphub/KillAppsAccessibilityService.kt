@@ -143,6 +143,12 @@ class KillAppsAccessibilityService : AccessibilityService() {
             val callback = onStatus
             onStatus = null
             callback?.invoke("پایان عملیات دسترس‌پذیری KillApps.")
+            handler.postDelayed({
+                val returnIntent = Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                startActivity(returnIntent)
+            }, 500)
             return
         }
         val packageName = queue.removeFirst()
