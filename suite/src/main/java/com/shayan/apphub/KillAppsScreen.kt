@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -46,6 +47,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +89,7 @@ fun KillAppsScreen(
     var showGuide by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showExceptionsDialog by remember { mutableStateOf(false) }
+    var showFailureDialog by remember { mutableStateOf(false) }
     var permissionStep by remember { mutableStateOf<KillAppsPermissionStep?>(null) }
     val context = LocalContext.current
     val killPrefs = remember(context) { context.getSharedPreferences("killapps_ui_preferences", Context.MODE_PRIVATE) }
@@ -94,7 +97,15 @@ fun KillAppsScreen(
     var exceptionPackages by remember {
         mutableStateOf(killPrefs.getStringSet("exception_packages", emptySet())?.toSet() ?: emptySet())
     }
+    var showFailureList by remember { mutableStateOf(killPrefs.getBoolean("show_failure_list", true)) }
+    var failedPackages by remember {
+        mutableStateOf(killPrefs.getStringSet("failed_packages", emptySet())?.toSet() ?: emptySet())
+    }
     var memory by remember { mutableStateOf(readMemory(context)) }
+
+    LaunchedEffect(operationMessage) {
+        failedPackages = killPrefs.getStringSet("failed_packages", emptySet())?.toSet() ?: emptySet()
+    }
 
     val visibleApps = remember(apps, includeUserApps, includeSystemApps, searchText) {
         apps.filter { app ->
@@ -146,6 +157,11 @@ fun KillAppsScreen(
             }
             IconButton(onClick = { showExceptionsDialog = true }) {
                 Icon(Icons.Rounded.Bookmark, contentDescription = "فهرست استثناها")
+            }
+            if (showFailureList) {
+                IconButton(onClick = { showFailureDialog = true }) {
+                    Icon(Icons.Rounded.ErrorOutline, contentDescription = "فهرست بستن ناموفق")
+                }
             }
             IconButton(onClick = { showSettings = true }) {
                 Icon(Icons.Rounded.Settings, contentDescription = "تنظیمات")
@@ -427,6 +443,23 @@ fun KillAppsScreen(
                             }
                         )
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("نمایش فهرست بستن ناموفق", fontWeight = FontWeight.Medium)
+                            Text(
+                                "مواردی که دکمهٔ توقف آن‌ها پیدا نشود یا کلیک رد شود ثبت می‌شوند.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showFailureList,
+                            onCheckedChange = {
+                                showFailureList = it
+                                killPrefs.edit().putBoolean("show_failure_list", it).apply()
+                            }
+                        )
+                    }
                     Divider(color = MaterialTheme.colorScheme.outlineVariant)
                     TextButton(onClick = {
                         showSettings = false
@@ -491,6 +524,51 @@ fun KillAppsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showExceptionsDialog = false }) { Text("تمام") }
+            }
+        )
+    }
+
+
+    if (showFailureDialog) {
+        val failedApps = apps.filter { it.packageName in failedPackages }
+        AlertDialog(
+            onDismissRequest = { showFailureDialog = false },
+            title = { Text("فهرست بستن ناموفق") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "\${failedPackages.size} مورد از آخرین عملیات ثبت شده است. فقط خطاهای قابل‌شناسایی در این فهرست می‌آیند.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (failedApps.isEmpty()) {
+                        Text("مورد ناموفقی ثبت نشده است.")
+                    } else {
+                        failedApps.forEach { app ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = app.icon,
+                                    contentDescription = app.label,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                                Text(app.label, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        failedPackages = emptySet()
+                        killPrefs.edit().putStringSet("failed_packages", emptySet()).apply()
+                        showFailureDialog = false
+                    }) { Text("پاک‌کردن فهرست") }
+                    TextButton(onClick = { showFailureDialog = false }) { Text("بستن") }
+                }
             }
         )
     }
