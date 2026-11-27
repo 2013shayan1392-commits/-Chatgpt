@@ -327,22 +327,15 @@ class MainActivity : ComponentActivity() {
             return
         }
         operationMessage = "در حال اجرای عملیات..."
-        Thread {
-            val result = try {
-                ShizukuShell.execute(script)
-            } catch (error: Exception) {
-                ShellResult(-1, "", error.message ?: "خطای نامشخص")
+        ShizukuShell.execute(this, script) { result ->
+            refreshShizukuState()
+            if (result.exitCode == 0) {
+                onSuccess()
+            } else {
+                operationMessage = "عملیات کامل نشد (کد " + result.exitCode + "): " +
+                    (result.stderr.ifBlank { result.stdout }.ifBlank { "فرمان توسط سیستم رد شد." })
             }
-            runOnUiThread {
-                refreshShizukuState()
-                if (result.exitCode == 0) {
-                    onSuccess()
-                } else {
-                    operationMessage = "عملیات کامل نشد (کد " + result.exitCode + "): " +
-                        (result.stderr.ifBlank { result.stdout }.ifBlank { "فرمان توسط سیستم رد شد." })
-                }
-            }
-        }.start()
+        }
     }
 
     companion object {
