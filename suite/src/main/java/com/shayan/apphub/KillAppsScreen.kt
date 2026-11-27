@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -431,12 +432,12 @@ fun KillAppsScreen(
                         showSettings = false
                         showExceptionsDialog = true
                     }) {
-                        Text("مدیریت فهرست استثناها (\${exceptionPackages.size})")
+                        Text("مدیریت فهرست استثناها (${exceptionPackages.size})")
                     }
                     Divider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Text("مجوز دسترس‌پذیری: \${if (accessibilityEnabled) "فعال" else "غیرفعال"}")
+                    Text("مجوز دسترس‌پذیری: ${if (accessibilityEnabled) "فعال" else "غیرفعال"}")
                     if (showProgressWindow) {
-                        Text("نمایش روی برنامه‌های دیگر: \${if (overlayPermissionGranted) "فعال" else "غیرفعال"}")
+                        Text("نمایش روی برنامه‌های دیگر: ${if (overlayPermissionGranted) "فعال" else "غیرفعال"}")
                     }
                 }
             },
@@ -494,6 +495,7 @@ fun KillAppsScreen(
         )
     }
 
+    }
 
 @Composable
 private fun MemoryCard(
