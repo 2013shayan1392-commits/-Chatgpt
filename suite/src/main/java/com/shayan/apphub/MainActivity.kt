@@ -216,7 +216,7 @@ class MainActivity : ComponentActivity() {
                             label = packageManager.getApplicationLabel(info).toString(),
                             packageName = info.packageName,
                             icon = packageManager.getApplicationIcon(info).toBitmap(96, 96).asImageBitmap(),
-                            isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                            isSystem = (info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
                         )
                     } catch (_: Exception) {
                         null
