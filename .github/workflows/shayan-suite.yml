@@ -2,7 +2,7 @@ name: Shayan Suite APK
 
 on:
   push:
-    branches: [ brevent-killapps-suite ]
+    branches: [ brevent-killapps-suite, killapps-clean-rebuild ]
     paths:
       - "suite/**"
       - "settings.gradle.kts"
