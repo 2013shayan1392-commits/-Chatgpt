@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -39,6 +40,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -139,6 +142,7 @@ private fun KillAppsScreenContent(
     var showSettings by remember { mutableStateOf(false) }
     var showExceptionsDialog by remember { mutableStateOf(false) }
     var showFailureDialog by remember { mutableStateOf(false) }
+    var overflowExpanded by remember { mutableStateOf(false) }
     var permissionStep by remember { mutableStateOf<KillAppsPermissionStep?>(null) }
     var showProgressWindow by remember { mutableStateOf(killPrefs.getBoolean("show_progress_window", true)) }
     var exceptionPackages by remember {
@@ -201,21 +205,37 @@ private fun KillAppsScreenContent(
                 "KillApps Pro",
                 modifier = Modifier.weight(1f),
                 fontSize = 21.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Normal
             )
             IconButton(onClick = { showGuide = true }) {
-                Icon(Icons.Rounded.Info, contentDescription = "راهنما")
+                Icon(Icons.Rounded.HelpOutline, contentDescription = "راهنما")
             }
-            IconButton(onClick = { showExceptionsDialog = true }) {
-                Icon(Icons.Rounded.Bookmark, contentDescription = "فهرست استثناها")
-            }
-            if (showFailureList) {
-                IconButton(onClick = { showFailureDialog = true }) {
-                    Icon(Icons.Rounded.ErrorOutline, contentDescription = "فهرست بستن ناموفق")
+            Box {
+                IconButton(onClick = { overflowExpanded = true }) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "بیشتر")
                 }
-            }
-            IconButton(onClick = { showSettings = true }) {
-                Icon(Icons.Rounded.Settings, contentDescription = "تنظیمات")
+                DropdownMenu(
+                    expanded = overflowExpanded,
+                    onDismissRequest = { overflowExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("تنظیمات") },
+                        leadingIcon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                        onClick = { overflowExpanded = false; showSettings = true }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("فهرست استثناها") },
+                        leadingIcon = { Icon(Icons.Rounded.Bookmark, contentDescription = null) },
+                        onClick = { overflowExpanded = false; showExceptionsDialog = true }
+                    )
+                    if (showFailureList) {
+                        DropdownMenuItem(
+                            text = { Text("موارد ناموفق") },
+                            leadingIcon = { Icon(Icons.Rounded.ErrorOutline, contentDescription = null) },
+                            onClick = { overflowExpanded = false; showFailureDialog = true }
+                        )
+                    }
+                }
             }
         }
         }
@@ -843,6 +863,6 @@ private fun readMemory(context: Context): Pair<Long, Long> {
 
 private fun formatMemory(bytes: Long): String {
     val gb = bytes / (1024.0 * 1024.0 * 1024.0)
-    return if (gb >= 1.0) String.format(Locale.US, "%.1f GB", gb)
+    return if (gb >= 1.0) String.format(Locale.US, "%.2f GB", gb)
     else String.format(Locale.US, "%.0f MB", bytes / (1024.0 * 1024.0))
 }
