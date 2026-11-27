@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -85,7 +87,7 @@ data class KillAppsPackage(
 )
 
 private enum class KillAppsFilter {
-    RECENT, ALL, PERSISTENT, EXCEPTIONS, FAILED
+    RECENT, ALL, PERSISTENT, CUSTOM, EXCEPTIONS, FAILED
 }
 
 class CleanKillAppsActivity : ComponentActivity() {
@@ -136,7 +138,7 @@ private class KillAppsRepository(context: Context) {
                         isSystem = system,
                         isPersistent = persistent,
                         lastUsedAt = lastUsed[info.packageName] ?: 0L,
-                        isProtected = isCorePackage(info.packageName) || persistent && isCorePackage(info.packageName)
+                        isProtected = isCorePackage(info.packageName)
                     )
                 }
                 .sortedWith(
@@ -193,6 +195,13 @@ private class KillAppsRepository(context: Context) {
     fun exceptions(): Set<String> =
         prefs.getStringSet("exceptions", emptySet())?.toSet() ?: emptySet()
 
+    fun customSelection(): Set<String> =
+        prefs.getStringSet("custom_selection", emptySet())?.toSet() ?: emptySet()
+
+    fun setCustomSelection(values: Set<String>) {
+        prefs.edit().putStringSet("custom_selection", values.toSet()).apply()
+    }
+
     fun failed(): Set<String> =
         prefs.getStringSet("failed", emptySet())?.toSet() ?: emptySet()
 
@@ -239,6 +248,7 @@ private fun CleanKillAppsScreen(
     var includeUser by remember { mutableStateOf(true) }
     var includeSystem by remember { mutableStateOf(true) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
+    var customSelection by remember { mutableStateOf(repository.customSelection()) }
     var exceptions by remember { mutableStateOf(repository.exceptions()) }
     var failed by remember { mutableStateOf(repository.failed()) }
     var usageAccess by remember { mutableStateOf(repository.hasUsageAccess()) }
@@ -252,6 +262,7 @@ private fun CleanKillAppsScreen(
         apps = repository.loadApps()
         exceptions = repository.exceptions()
         failed = repository.failed()
+        customSelection = repository.customSelection()
         usageAccess = repository.hasUsageAccess()
         accessibilityEnabled = repository.isAccessibilityEnabled()
         overlayAllowed = Settings.canDrawOverlays(context)
@@ -265,6 +276,7 @@ private fun CleanKillAppsScreen(
             KillAppsFilter.RECENT -> app.lastUsedAt >= now - RECENT_WINDOW_MS
             KillAppsFilter.ALL -> true
             KillAppsFilter.PERSISTENT -> app.isPersistent
+            KillAppsFilter.CUSTOM -> app.packageName in customSelection
             KillAppsFilter.EXCEPTIONS -> app.packageName in exceptions
             KillAppsFilter.FAILED -> app.packageName in failed
         }
@@ -414,7 +426,7 @@ private fun CleanKillAppsScreen(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             FilterChip(
@@ -431,6 +443,11 @@ private fun CleanKillAppsScreen(
                 selected = filter == KillAppsFilter.PERSISTENT,
                 onClick = { filter = KillAppsFilter.PERSISTENT; selected = emptySet() },
                 label = { Text("ماندگار") }
+            )
+            FilterChip(
+                selected = filter == KillAppsFilter.CUSTOM,
+                onClick = { filter = KillAppsFilter.CUSTOM; selected = emptySet() },
+                label = { Text("سفارشی") }
             )
             FilterChip(
                 selected = filter == KillAppsFilter.EXCEPTIONS,
@@ -493,6 +510,7 @@ private fun CleanKillAppsScreen(
                         KillAppsFilter.RECENT -> if (usageAccess) "برنامه‌ای در بازهٔ اخیر پیدا نشد." else "برای مشاهدهٔ فهرست اخیر، آمار استفاده را فعال کن."
                         KillAppsFilter.ALL -> "برنامه‌ای پیدا نشد."
                         KillAppsFilter.PERSISTENT -> "برنامهٔ ماندگاری پیدا نشد."
+                        KillAppsFilter.CUSTOM -> "فهرست سفارشی خالی است."
                         KillAppsFilter.EXCEPTIONS -> "فهرست استثناها خالی است."
                         KillAppsFilter.FAILED -> "مورد ناموفقی ثبت نشده است."
                     },
@@ -528,7 +546,18 @@ private fun CleanKillAppsScreen(
             )
         }
 
-        if (filter == KillAppsFilter.EXCEPTIONS) {
+        if (filter == KillAppsFilter.CUSTOM) {
+            OutlinedButton(
+                onClick = {
+                    customSelection = customSelection - selected
+                    repository.setCustomSelection(customSelection)
+                    selected = emptySet()
+                    notice = "برنامه‌های انتخاب‌شده از فهرست سفارشی حذف شدند."
+                },
+                enabled = selected.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("حذف از فهرست سفارشی") }
+        } else if (filter == KillAppsFilter.EXCEPTIONS) {
             OutlinedButton(
                 onClick = ::addOrRemoveExceptions,
                 enabled = selected.isNotEmpty(),
@@ -540,6 +569,22 @@ private fun CleanKillAppsScreen(
             }
         } else if (filter != KillAppsFilter.FAILED) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        if (selected.isEmpty()) {
+                            notice = "ابتدا برنامه‌ها را انتخاب کن."
+                        } else {
+                            customSelection = customSelection + selected
+                            repository.setCustomSelection(customSelection)
+                            selected = emptySet()
+                            notice = "فهرست سفارشی ذخیره شد."
+                        }
+                    },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("فهرست سفارشی")
+                }
                 OutlinedButton(
                     onClick = ::addOrRemoveExceptions,
                     enabled = selected.isNotEmpty(),
