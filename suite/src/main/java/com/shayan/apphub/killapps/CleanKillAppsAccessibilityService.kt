@@ -262,6 +262,7 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
         performGlobalAction(GLOBAL_ACTION_BACK)
         CleanKillAppsProgressWindow.dismiss()
         publish(message)
+        sendStatus(message, completed, total, true)
         persistFailures()
         onFinished?.invoke(failures.toSet())
         onFinished = null
@@ -353,6 +354,13 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
         @Volatile
         private var instance: CleanKillAppsAccessibilityService? = null
 
+        fun cancelCurrent() {
+            val service = instance ?: return
+            service.handler.post {
+                service.cancelOperation("عملیات توسط کاربر لغو شد.")
+            }
+        }
+
         fun enqueue(
             context: Context,
             packages: List<String>,
@@ -386,9 +394,8 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
                         }
                     )
                     if (!shown) {
-                        service.running = false
-                        service.onFinished = null
-                        return@post
+                        service.showProgress = false
+                        service.publish("پنجرهٔ شناور باز نشد؛ عملیات از داخل صفحه ادامه می‌یابد.")
                     }
                 }
                 service.beginNext()
