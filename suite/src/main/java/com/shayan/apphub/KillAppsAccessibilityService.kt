@@ -273,10 +273,12 @@ class KillAppsAccessibilityService : AccessibilityService() {
             context: Context,
             packages: List<String>,
             appLabels: Map<String, String>,
+            showProgressWindow: Boolean,
             status: (String) -> Unit
         ): Boolean {
             val service = instance ?: return false
-            if (packages.isEmpty() || service.isProcessing || !Settings.canDrawOverlays(context)) return false
+            if (packages.isEmpty() || service.isProcessing) return false
+            if (showProgressWindow && !Settings.canDrawOverlays(context)) return false
             service.handler.post {
                 service.queue.clear()
                 service.queue.addAll(packages.distinct())
@@ -290,11 +292,15 @@ class KillAppsAccessibilityService : AccessibilityService() {
                 service.confirmationRetries = 0
                 service.onStatus = status
                 service.isProcessing = true
-                val shown = KillAppsProgressOverlay.show(
-                    service,
-                    service.totalCount,
-                    onCancel = { service.handler.post { service.cancelOperation() } }
-                )
+                val shown = if (showProgressWindow) {
+                    KillAppsProgressOverlay.show(
+                        service,
+                        service.totalCount,
+                        onCancel = { service.handler.post { service.cancelOperation() } }
+                    )
+                } else {
+                    true
+                }
                 if (!shown) {
                     service.isProcessing = false
                     service.onStatus?.invoke("صفحهٔ پیشرفت روی سایر برنامه‌ها نمایش داده نشد؛ مجوز نمایش را بررسی کن.")
