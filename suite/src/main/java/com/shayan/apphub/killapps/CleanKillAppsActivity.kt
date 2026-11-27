@@ -2,8 +2,10 @@ package com.shayan.apphub.killapps
 
 import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Build
@@ -92,7 +94,18 @@ private enum class KillAppsFilter {
 
 class CleanKillAppsActivity : ComponentActivity() {
     private val resumeVersion = mutableStateOf(0)
+    private val serviceStatus = mutableStateOf("")
     private val repository by lazy { KillAppsRepository(this) }
+    private var statusReceiverRegistered = false
+
+    private val statusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != CleanKillAppsAccessibilityService.ACTION_STATUS) return
+            serviceStatus.value = intent.getStringExtra(
+                CleanKillAppsAccessibilityService.EXTRA_MESSAGE
+            ).orEmpty()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,10 +114,33 @@ class CleanKillAppsActivity : ComponentActivity() {
                 CleanKillAppsScreen(
                     repository = repository,
                     resumeVersion = resumeVersion.value,
+                    serviceStatus = serviceStatus.value,
                     onBack = { finish() }
                 )
             }
         }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onStart() {
+        super.onStart()
+        if (!statusReceiverRegistered) {
+            val filter = IntentFilter(CleanKillAppsAccessibilityService.ACTION_STATUS)
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(statusReceiver, filter)
+            }
+            statusReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (statusReceiverRegistered) {
+            unregisterReceiver(statusReceiver)
+            statusReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     override fun onResume() {
@@ -239,6 +275,7 @@ private class KillAppsRepository(context: Context) {
 private fun CleanKillAppsScreen(
     repository: KillAppsRepository,
     resumeVersion: Int,
+    serviceStatus: String,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -543,6 +580,13 @@ private fun CleanKillAppsScreen(
                 notice,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
+            )
+        }
+        if (serviceStatus.isNotBlank()) {
+            Text(
+                serviceStatus,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
