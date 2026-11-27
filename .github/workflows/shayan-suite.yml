@@ -1,4 +1,4 @@
-name: Shayan App Hub APK
+name: Shayan Suite APK
 
 on:
   push:
@@ -12,6 +12,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: shayan-suite-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -30,13 +34,13 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build App Hub debug APK
+      - name: Build Shayan Suite debug APK
         run: gradle :suite:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Shayan-App-Hub-debug
+          name: Shayan-Suite-debug
           path: suite/build/outputs/apk/debug/suite-debug.apk
           if-no-files-found: error
           retention-days: 14
