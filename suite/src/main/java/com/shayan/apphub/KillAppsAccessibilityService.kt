@@ -1,7 +1,6 @@
 package com.shayan.apphub
 
 import android.accessibilityservice.AccessibilityService
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -20,6 +19,7 @@ class KillAppsAccessibilityService : AccessibilityService() {
     private val queue = ArrayDeque<String>()
     private var currentPackage: String? = null
     private var stopButtonClicked = false
+    private var confirmationCheckScheduled = false
     private var onStatus: ((String) -> Unit)? = null
     private var timeout: Runnable? = null
 
@@ -75,11 +75,22 @@ class KillAppsAccessibilityService : AccessibilityService() {
             if (positive != null && clickableAncestor(positive)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
                 finishCurrent("درخواست توقف برای $currentPackage تأیید شد.")
             }
-        } else {
+        } else if (!confirmationCheckScheduled) {
             // Some Android builds stop immediately without a confirmation dialog.
+            val expectedPackage = currentPackage
+            confirmationCheckScheduled = true
             handler.postDelayed({
-                if (currentPackage != null && stopButtonClicked) {
-                    finishCurrent("درخواست توقف برای $currentPackage ارسال شد.")
+                confirmationCheckScheduled = false
+                if (currentPackage == expectedPackage && stopButtonClicked) {
+                    val latestRoot = rootInActiveWindow
+                    val latestText = latestRoot?.let { collectText(it).joinToString(" ").lowercase() }.orEmpty()
+                    val dialogStillVisible = latestText.contains("force stop") ||
+                        latestText.contains("توقف اجباری") ||
+                        latestText.contains("اجبار به توقف") ||
+                        latestText.contains("می‌خواهید متوقف")
+                    if (!dialogStillVisible) {
+                        finishCurrent("درخواست توقف برای $expectedPackage ارسال شد.")
+                    }
                 }
             }, 1200)
         }
@@ -123,6 +134,7 @@ class KillAppsAccessibilityService : AccessibilityService() {
         onStatus?.invoke(message)
         currentPackage = null
         stopButtonClicked = false
+        confirmationCheckScheduled = false
         handler.postDelayed({ startNext() }, 500)
     }
 
@@ -136,6 +148,7 @@ class KillAppsAccessibilityService : AccessibilityService() {
         val packageName = queue.removeFirst()
         currentPackage = packageName
         stopButtonClicked = false
+        confirmationCheckScheduled = false
         onStatus?.invoke("در حال باز کردن اطلاعات برنامه: $packageName")
         try {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
