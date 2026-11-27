@@ -129,10 +129,10 @@ private fun KillAppsScreenContent(
 ) {
     val context = LocalContext.current
     val killPrefs = remember(context) { context.getSharedPreferences("killapps_ui_preferences", Context.MODE_PRIVATE) }
-    var mode by remember { mutableStateOf(if (killPrefs.getString("list_mode", "CUSTOM") == "ALL") KillAppsListMode.ALL else KillAppsListMode.CUSTOM) }
+    var mode by remember { mutableStateOf(if (killPrefs.getString("list_mode", "ALL") == "ALL") KillAppsListMode.ALL else KillAppsListMode.CUSTOM) }
     var includeUserApps by remember { mutableStateOf(killPrefs.getBoolean("include_user_apps", true)) }
     var includeSystemApps by remember { mutableStateOf(killPrefs.getBoolean("include_system_apps", true)) }
-    var showInstalledApps by remember { mutableStateOf(killPrefs.getBoolean("show_installed_apps", false)) }
+    var showInstalledApps by remember { mutableStateOf(killPrefs.getBoolean("show_installed_apps", true)) }
     var selectedPackages by remember {
         mutableStateOf(killPrefs.getStringSet("selected_packages", emptySet())?.toSet() ?: emptySet())
     }
