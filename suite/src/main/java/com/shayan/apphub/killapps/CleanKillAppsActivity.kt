@@ -1,5 +1,6 @@
 package com.shayan.apphub.killapps
 
+import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
@@ -47,6 +48,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -299,6 +301,7 @@ private fun CleanKillAppsScreen(
     var accessibilityEnabled by remember { mutableStateOf(repository.isAccessibilityEnabled()) }
     var overlayAllowed by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var showProgress by remember { mutableStateOf(repository.showProgress()) }
+    var memory by remember { mutableStateOf(readMemory(context)) }
     var showSettings by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
 
@@ -311,6 +314,7 @@ private fun CleanKillAppsScreen(
         accessibilityEnabled = repository.isAccessibilityEnabled()
         overlayAllowed = Settings.canDrawOverlays(context)
         showProgress = repository.showProgress()
+        memory = readMemory(context)
     }
 
     val now = System.currentTimeMillis()
@@ -427,7 +431,8 @@ private fun CleanKillAppsScreen(
             }
             IconButton(onClick = {
                 apps = repository.loadApps()
-                notice = "فهرست برنامه‌ها به‌روزرسانی شد."
+                memory = readMemory(context)
+                notice = "فهرست برنامه‌ها و اطلاعات RAM به‌روزرسانی شد."
             }) {
                 Icon(Icons.Rounded.Refresh, contentDescription = "به‌روزرسانی")
             }
@@ -435,6 +440,8 @@ private fun CleanKillAppsScreen(
                 Icon(Icons.Rounded.Settings, contentDescription = "تنظیمات")
             }
         }
+
+        RamUsageCard(totalBytes = memory.first, availableBytes = memory.second)
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -721,6 +728,67 @@ private fun CleanKillAppsScreen(
                 TextButton(onClick = { showSettings = false }) { Text("بستن") }
             }
         )
+    }
+}
+
+private fun readMemory(context: Context): Pair<Long, Long> {
+    return try {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        manager.getMemoryInfo(info)
+        info.totalMem.coerceAtLeast(0L) to info.availMem.coerceIn(0L, info.totalMem.coerceAtLeast(0L))
+    } catch (_: Exception) {
+        0L to 0L
+    }
+}
+
+private fun formatMemory(bytes: Long): String {
+    val value = bytes / (1024.0 * 1024.0 * 1024.0)
+    return String.format(Locale.ROOT, "%.1f GB", value)
+}
+
+@Composable
+private fun RamUsageCard(totalBytes: Long, availableBytes: Long) {
+    val usedBytes = (totalBytes - availableBytes).coerceAtLeast(0L)
+    val fraction = if (totalBytes > 0L) (usedBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+    val percent = (fraction * 100f).toInt()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(17.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(15.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(78.dp)) {
+                CircularProgressIndicator(
+                    progress = fraction,
+                    modifier = Modifier.fillMaxSize(),
+                    strokeWidth = 7.dp,
+                    trackColor = MaterialTheme.colorScheme.surface
+                )
+                Text("$percent%", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text("RAM", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(
+                    formatMemory(usedBytes) + " استفاده‌شده از " + formatMemory(totalBytes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    formatMemory(availableBytes) + " در دسترس",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
     }
 }
 
