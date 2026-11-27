@@ -72,7 +72,8 @@ private data class InstalledApp(
     val label: String,
     val packageName: String,
     val icon: ImageBitmap,
-    val isSystem: Boolean
+    val isSystem: Boolean,
+    val isRunning: Boolean
 )
 
 class MainActivity : ComponentActivity() {
@@ -81,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private var shizukuRunning by mutableStateOf(false)
     private var shizukuGranted by mutableStateOf(false)
     private var accessibilityEnabled by mutableStateOf(false)
+    private var overlayPermissionGranted by mutableStateOf(false)
     private var operationMessage by mutableStateOf("")
     private var managedPackages by mutableStateOf<Set<String>>(emptySet())
 
@@ -108,6 +110,7 @@ class MainActivity : ComponentActivity() {
         refreshInstalledApps()
         refreshShizukuState()
         refreshAccessibilityState()
+        refreshOverlayPermissionState()
 
         setContent {
             val dark = isSystemInDarkTheme()
@@ -156,6 +159,8 @@ class MainActivity : ComponentActivity() {
                                 onConnect = ::connectShizuku,
                                 accessibilityEnabled = accessibilityEnabled,
                                 onEnableAccessibility = ::openAccessibilitySettings,
+                                overlayPermissionGranted = overlayPermissionGranted,
+                                onEnableOverlay = ::openOverlaySettings,
                                 onStop = ::stopWithKillApps
                             )
                         }
@@ -197,6 +202,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         refreshShizukuState()
         refreshAccessibilityState()
+        refreshOverlayPermissionState()
+        refreshInstalledApps()
     }
 
     private fun refreshShizukuState() {
@@ -207,6 +214,10 @@ class MainActivity : ComponentActivity() {
     @Suppress("DEPRECATION")
     private fun refreshInstalledApps() {
         installedApps = try {
+            val runningPackages = (getSystemService(ACTIVITY_SERVICE) as ActivityManager)
+                .runningAppProcesses.orEmpty()
+                .flatMap { process -> process.pkgList?.toList().orEmpty() + listOfNotNull(process.processName) }
+                .toSet()
             packageManager.getInstalledApplications(0)
                 .asSequence()
                 .filter { it.packageName != packageName }
@@ -216,7 +227,8 @@ class MainActivity : ComponentActivity() {
                             label = packageManager.getApplicationLabel(info).toString(),
                             packageName = info.packageName,
                             icon = packageManager.getApplicationIcon(info).toBitmap(96, 96).asImageBitmap(),
-                            isSystem = (info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+                            isSystem = (info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0,
+                            isRunning = info.packageName in runningPackages
                         )
                     } catch (_: Exception) {
                         null
@@ -271,6 +283,24 @@ class MainActivity : ComponentActivity() {
         accessibilityEnabled = isKillAppsAccessibilityEnabled()
     }
 
+    private fun refreshOverlayPermissionState() {
+        overlayPermissionGranted = Settings.canDrawOverlays(this)
+    }
+
+    private fun openOverlaySettings() {
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + packageName)
+                )
+            )
+            operationMessage = "اجازهٔ نمایش روی سایر برنامه‌ها را فعال کن و به Shayan Suite برگرد."
+        } catch (_: Exception) {
+            operationMessage = "باز کردن تنظیمات نمایش روی سایر برنامه‌ها ممکن نشد."
+        }
+    }
+
     private fun openAccessibilitySettings() {
         try {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -287,19 +317,27 @@ class MainActivity : ComponentActivity() {
         }
 
         if (accessibilityEnabled || isKillAppsAccessibilityEnabled()) {
-            val started = KillAppsAccessibilityService.start(this, packages.toList()) { message ->
+            if (!Settings.canDrawOverlays(this)) {
+                openOverlaySettings()
+                operationMessage = "برای نمایش درصد پیشرفت هنگام باز بودن تنظیمات، اجازهٔ نمایش روی سایر برنامه‌ها لازم است."
+                return
+            }
+            val labels = installedApps.associate { it.packageName to it.label }
+            val started = KillAppsAccessibilityService.start(this, packages.toList(), labels) { message ->
                 operationMessage = message
             }
             if (started) {
-                operationMessage = "دسترس‌پذیری فعال است؛ توقف برنامه‌های انتخاب‌شده از صفحهٔ اطلاعات برنامه‌ها آغاز شد."
+                operationMessage = "عملیات KillApps آغاز شد."
                 return
             }
+            operationMessage = "سرویس دسترس‌پذیری هنوز متصل نشده است. یک‌بار آن را در تنظیمات خاموش و روشن کن."
+            return
         }
 
         if (ShizukuShell.hasPermission()) {
             runPrivileged(
                 KillAppsEngine.forceStopScript(packages),
-                "KillApps: درخواست Force stop برای " + packages.size + " برنامه اجرا شد."
+                "درخواست توقف اجباری برای " + packages.size + " برنامه ارسال شد."
             )
         } else {
             val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
@@ -313,7 +351,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             operationMessage =
-                "درخواست بستن پس‌زمینه برای " + requested + " برنامه فرستاده شد. این روش Force stop کامل نیست؛ برای عملکرد کامل‌تر، Shizuku را وصل کن."
+                "درخواست بستن پس‌زمینه برای " + requested + " برنامه فرستاده شد. این روش توقف اجباری کامل نیست."
         }
     }
 
@@ -536,7 +574,9 @@ private fun EngineScreen(
     onRestrict: ((Set<String>) -> Unit)? = null,
     onRestore: ((Set<String>) -> Unit)? = null,
     accessibilityEnabled: Boolean = false,
-    onEnableAccessibility: (() -> Unit)? = null
+    onEnableAccessibility: (() -> Unit)? = null,
+    overlayPermissionGranted: Boolean = true,
+    onEnableOverlay: (() -> Unit)? = null
 ) {
     var selectedPackages by remember(title) { mutableStateOf(setOf<String>()) }
 
@@ -556,7 +596,7 @@ private fun EngineScreen(
 
         Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        if (!isBrevent) {
+        if (!isBrevent && !accessibilityEnabled) {
             Card(
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -569,56 +609,68 @@ private fun EngineScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("دسترس‌پذیری KillApps", fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (accessibilityEnabled) "فعال است؛ توقف برنامه‌ها از رابط تنظیمات اندروید انجام می‌شود."
-                            else "برای کارکرد مشابه نسخه اصلی، این سرویس را فعال کن.",
+                            "برای پردازش خودکار صفحهٔ توقف اجباری، این سرویس را فعال کن.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     OutlinedButton(onClick = { onEnableAccessibility?.invoke() }) {
-                        Text(if (accessibilityEnabled) "تنظیمات" else "فعال‌سازی")
+                        Text("فعال‌سازی")
                     }
                 }
             }
         }
 
-        Card(
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(13.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+        if (!isBrevent && !overlayPermissionGranted) {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Rounded.Security,
-                        contentDescription = null,
-                        tint = if (shellGranted) Color(0xFF24936F) else MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.size(8.dp))
-                    Text(
-                        when {
-                            shellGranted -> "Shizuku متصل و مجاز"
-                            shellRunning -> "Shizuku اجراست؛ مجوز برنامه لازم است"
-                            else -> "Shizuku متصل نیست"
-                        },
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = onConnect) {
-                        Text(if (shellGranted) "بررسی" else "اتصال")
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("نمایش درصد پیشرفت", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "برای نمایش صفحهٔ پیشرفت روی تنظیمات اندروید، این اجازه لازم است.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = { onEnableOverlay?.invoke() }) {
+                        Text("فعال‌سازی")
                     }
                 }
-                Text(
-                    if (isBrevent) {
-                        "برای اعمال و بازگردانی قواعد پس‌زمینه، دسترسی ADB از طریق Shizuku لازم است."
-                    } else {
-                        "با Shizuku درخواست Force stop اجرا می‌شود؛ بدون آن فقط درخواست محدود بستن پردازهٔ پس‌زمینه ارسال می‌شود."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            }
+        }
+
+        if (isBrevent && !shellGranted) {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(13.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            if (shellRunning) "Shizuku اجراست؛ مجوز برنامه لازم است" else "Shizuku متصل نیست",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.weight(1f))
+                        OutlinedButton(onClick = onConnect) { Text("اتصال") }
+                    }
+                    Text(
+                        "برای اعمال و بازگردانی قواعد پس‌زمینه، دسترسی ADB از طریق Shizuku لازم است.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -743,6 +795,9 @@ private fun AppSelectionList(
                                 )
                                 if (app.isSystem) {
                                     Text("برنامهٔ سیستمی", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                                }
+                                if (app.isRunning) {
+                                    Text("در حال اجرا", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                             Checkbox(

@@ -6,22 +6,26 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.provider.Settings
 
-/**
- * Uses Android's own App info screen to request Force stop for each user-selected package.
- * Android/OEM confirmation dialogs remain in control; protected packages may refuse the action.
- */
+/** Processes one Android App info page at a time, issuing Force stop only once. */
 class KillAppsAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private val queue = ArrayDeque<String>()
+    private var labels: Map<String, String> = emptyMap()
     private var currentPackage: String? = null
+    private var currentLabel = ""
+    private var totalCount = 0
+    private var completedCount = 0
     private var stopButtonClicked = false
-    private var confirmationCheckScheduled = false
+    private var confirmationClicked = false
+    private var confirmationRetries = 0
     private var onStatus: ((String) -> Unit)? = null
     private var timeout: Runnable? = null
+    private var settleRunnable: Runnable? = null
+    private var isProcessing = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -29,7 +33,7 @@ class KillAppsAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (currentPackage == null || event == null) return
+        if (!isProcessing || currentPackage == null || event == null) return
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
@@ -39,61 +43,83 @@ class KillAppsAccessibilityService : AccessibilityService() {
                 text.contains("force stop", true) ||
                     text.contains("توقف اجباری", true) ||
                     text.contains("اجبار به توقف", true)
+            } ?: return
+
+            if (!stopNode.isEnabled) {
+                finishCurrent("برنامهٔ $currentLabel از قبل متوقف است.")
+                return
             }
-            if (stopNode != null && stopNode.isEnabled) {
-                val target = clickableAncestor(stopNode)
-                if (target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
-                    stopButtonClicked = true
-                    onStatus?.invoke("درخواست توقف برای $currentPackage؛ بررسی پنجرهٔ تأیید...")
-                    handler.postDelayed({ handleConfirmation() }, 350)
-                }
+
+            // Set before ACTION_CLICK to prevent duplicate clicks from subsequent events.
+            stopButtonClicked = true
+            val clicked = clickableAncestor(stopNode)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            if (!clicked) {
+                finishCurrent("کلیک روی توقف اجباری برای $currentLabel پذیرفته نشد؛ از آن عبور شد.")
+                return
             }
+            publishStatus("درخواست توقف برای $currentLabel ثبت شد؛ در انتظار نتیجه...")
+            scheduleSettleCheck()
         } else {
-            handleConfirmation()
+            handleConfirmationIfVisible(root)
         }
     }
 
-    private fun handleConfirmation() {
-        if (currentPackage == null) return
-        val root = rootInActiveWindow ?: return
-        val allText = collectText(root).joinToString(" ").lowercase()
-        val confirmationVisible =
-            allText.contains("force stop") ||
-            allText.contains("توقف اجباری") ||
-            allText.contains("اجبار به توقف") ||
-            allText.contains("می‌خواهید متوقف") ||
-            allText.contains("توقف داده شود")
-
-        if (confirmationVisible) {
-            val positive = findNode(root) { text ->
-                text.equals("ok", true) ||
-                    text.equals("تأیید", true) ||
-                    text.equals("تایید", true) ||
-                    text.equals("موافق", true) ||
-                    text.equals("اجبار به توقف", true)
+    private fun scheduleSettleCheck() {
+        settleRunnable?.let(handler::removeCallbacks)
+        val expectedPackage = currentPackage
+        settleRunnable = Runnable {
+            settleRunnable = null
+            if (currentPackage != expectedPackage || !stopButtonClicked || confirmationClicked) return@Runnable
+            val latestRoot = rootInActiveWindow
+            if (latestRoot != null && hasConfirmationPrompt(latestRoot)) {
+                handleConfirmationIfVisible(latestRoot)
+            } else {
+                // The system may show a short spinner/disabled state; never click again.
+                finishCurrent("درخواست توقف برای $currentLabel انجام شد.")
             }
-            if (positive != null && clickableAncestor(positive)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
-                finishCurrent("درخواست توقف برای $currentPackage تأیید شد.")
-            }
-        } else if (!confirmationCheckScheduled) {
-            // Some Android builds stop immediately without a confirmation dialog.
-            val expectedPackage = currentPackage
-            confirmationCheckScheduled = true
-            handler.postDelayed({
-                confirmationCheckScheduled = false
-                if (currentPackage == expectedPackage && stopButtonClicked) {
-                    val latestRoot = rootInActiveWindow
-                    val latestText = latestRoot?.let { collectText(it).joinToString(" ").lowercase() }.orEmpty()
-                    val dialogStillVisible = latestText.contains("force stop") ||
-                        latestText.contains("توقف اجباری") ||
-                        latestText.contains("اجبار به توقف") ||
-                        latestText.contains("می‌خواهید متوقف")
-                    if (!dialogStillVisible) {
-                        finishCurrent("درخواست توقف برای $expectedPackage ارسال شد.")
-                    }
-                }
-            }, 1200)
         }
+        handler.postDelayed(settleRunnable!!, 1400)
+    }
+
+    private fun handleConfirmationIfVisible(root: AccessibilityNodeInfo) {
+        if (!hasConfirmationPrompt(root) || confirmationClicked) return
+        settleRunnable?.let(handler::removeCallbacks)
+        settleRunnable = null
+        val positive = findNode(root) { text ->
+            text.equals("ok", true) ||
+                text.equals("force stop", true) ||
+                text.equals("توقف اجباری", true) ||
+                text.equals("تأیید", true) ||
+                text.equals("تایید", true) ||
+                text.equals("موافق", true)
+        }
+
+        if (positive != null &&
+            clickableAncestor(positive)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+        ) {
+            confirmationClicked = true
+            publishStatus("تأیید توقف $currentLabel انجام شد.")
+            handler.postDelayed({ finishCurrent("توقف $currentLabel تأیید شد.") }, 750)
+        } else if (confirmationRetries++ < 10) {
+            handler.postDelayed({
+                if (currentPackage != null && !confirmationClicked) {
+                    rootInActiveWindow?.let(::handleConfirmationIfVisible)
+                }
+            }, 350)
+        }
+    }
+
+    private fun hasConfirmationPrompt(root: AccessibilityNodeInfo): Boolean {
+        val text = collectText(root).joinToString(" ").lowercase()
+        return text.contains("do you want to force stop") ||
+            text.contains("force stop this app") ||
+            text.contains("force stop?") ||
+            text.contains("if you force stop") ||
+            text.contains("this app may misbehave") ||
+            text.contains("ممکن است برنامه") ||
+            text.contains("می‌خواهید این برنامه را متوقف") ||
+            text.contains("آیا می‌خواهید") ||
+            text.contains("اجبار به توقف این برنامه")
     }
 
     private fun findNode(root: AccessibilityNodeInfo, predicate: (String) -> Boolean): AccessibilityNodeInfo? {
@@ -121,41 +147,76 @@ class KillAppsAccessibilityService : AccessibilityService() {
 
     private fun clickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
-        repeat(5) {
-            if (current == null) return null
-            if (current!!.isClickable) return current
-            current = current!!.parent
+        repeat(6) {
+            val candidate = current ?: return null
+            if (candidate.isClickable) return candidate
+            current = candidate.parent
         }
         return node
     }
 
+    private fun publishStatus(message: String) {
+        onStatus?.invoke(message)
+        KillAppsProgressOverlay.update(
+            completed = completedCount,
+            total = totalCount,
+            appName = currentLabel.ifBlank { "در حال آماده‌سازی..." },
+            status = message
+        )
+    }
+
     private fun finishCurrent(message: String) {
         timeout?.let(handler::removeCallbacks)
+        timeout = null
+        settleRunnable?.let(handler::removeCallbacks)
+        settleRunnable = null
+        val finishedPackage = currentPackage ?: return
         onStatus?.invoke(message)
         currentPackage = null
+        completedCount = (completedCount + 1).coerceAtMost(totalCount)
         stopButtonClicked = false
-        confirmationCheckScheduled = false
-        handler.postDelayed({ startNext() }, 500)
+        confirmationClicked = false
+        confirmationRetries = 0
+        KillAppsProgressOverlay.update(
+            completed = completedCount,
+            total = totalCount,
+            appName = labels[finishedPackage] ?: finishedPackage,
+            status = "پردازش " + completedCount + " از " + totalCount
+        )
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        handler.postDelayed({ startNext() }, 450)
     }
 
     private fun startNext() {
         if (queue.isEmpty()) {
-            val callback = onStatus
-            onStatus = null
-            callback?.invoke("پایان عملیات دسترس‌پذیری KillApps.")
+            currentPackage = null
+            KillAppsProgressOverlay.update(
+                completed = totalCount,
+                total = totalCount,
+                appName = "پایان عملیات",
+                status = "همه موارد انتخاب‌شده پردازش شدند."
+            )
             handler.postDelayed({
+                isProcessing = false
+                KillAppsProgressOverlay.dismiss()
+                onStatus?.invoke("پایان عملیات KillApps.")
+                onStatus = null
                 val returnIntent = Intent(this, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 }
                 startActivity(returnIntent)
-            }, 500)
+            }, 1200)
             return
         }
+
         val packageName = queue.removeFirst()
         currentPackage = packageName
+        currentLabel = labels[packageName] ?: packageName
         stopButtonClicked = false
-        confirmationCheckScheduled = false
-        onStatus?.invoke("در حال باز کردن اطلاعات برنامه: $packageName")
+        confirmationClicked = false
+        confirmationRetries = 0
+        publishStatus("در حال باز کردن اطلاعات برنامه: $currentLabel")
+
         try {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = Uri.fromParts("package", packageName, null)
@@ -165,38 +226,81 @@ class KillAppsAccessibilityService : AccessibilityService() {
             timeout?.let(handler::removeCallbacks)
             timeout = Runnable {
                 if (currentPackage == packageName) {
-                    finishCurrent("برای $packageName دکمهٔ توقف پیدا نشد یا سیستم اجازه نداد؛ از آن عبور شد.")
+                    finishCurrent("برای $currentLabel دکمهٔ توقف پیدا نشد یا سیستم اجازه نداد؛ از آن عبور شد.")
                 }
             }
-            handler.postDelayed(timeout!!, 5000)
-        } catch (error: Exception) {
-            finishCurrent("باز کردن اطلاعات $packageName ناموفق بود؛ از آن عبور شد.")
+            handler.postDelayed(timeout!!, 10000)
+        } catch (_: Exception) {
+            finishCurrent("باز کردن اطلاعات $currentLabel ناموفق بود؛ از آن عبور شد.")
         }
     }
 
-    override fun onInterrupt() {
-        onStatus?.invoke("سرویس دسترس‌پذیری متوقف شد.")
+    private fun cancelOperation() {
+        timeout?.let(handler::removeCallbacks)
+        settleRunnable?.let(handler::removeCallbacks)
+        timeout = null
+        settleRunnable = null
         queue.clear()
         currentPackage = null
+        isProcessing = false
+        onStatus?.invoke("عملیات KillApps لغو شد.")
         onStatus = null
+        KillAppsProgressOverlay.dismiss()
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        handler.postDelayed({
+            val returnIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(returnIntent)
+        }, 300)
+    }
+
+    override fun onInterrupt() {
+        if (isProcessing) cancelOperation()
     }
 
     override fun onDestroy() {
         if (instance === this) instance = null
         handler.removeCallbacksAndMessages(null)
+        KillAppsProgressOverlay.dismiss()
         super.onDestroy()
     }
 
     companion object {
         @Volatile private var instance: KillAppsAccessibilityService? = null
 
-        fun start(context: Context, packages: List<String>, status: (String) -> Unit): Boolean {
+        fun start(
+            context: Context,
+            packages: List<String>,
+            appLabels: Map<String, String>,
+            status: (String) -> Unit
+        ): Boolean {
             val service = instance ?: return false
-            if (packages.isEmpty()) return false
+            if (packages.isEmpty() || service.isProcessing || !Settings.canDrawOverlays(context)) return false
             service.handler.post {
                 service.queue.clear()
                 service.queue.addAll(packages.distinct())
+                service.labels = appLabels
+                service.totalCount = service.queue.size
+                service.completedCount = 0
+                service.currentPackage = null
+                service.currentLabel = ""
+                service.stopButtonClicked = false
+                service.confirmationClicked = false
+                service.confirmationRetries = 0
                 service.onStatus = status
+                service.isProcessing = true
+                val shown = KillAppsProgressOverlay.show(
+                    service,
+                    service.totalCount,
+                    onCancel = { service.handler.post { service.cancelOperation() } }
+                )
+                if (!shown) {
+                    service.isProcessing = false
+                    service.onStatus?.invoke("صفحهٔ پیشرفت روی سایر برنامه‌ها نمایش داده نشد؛ مجوز نمایش را بررسی کن.")
+                    service.onStatus = null
+                    return@post
+                }
                 service.startNext()
             }
             return true
