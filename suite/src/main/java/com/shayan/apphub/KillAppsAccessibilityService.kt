@@ -23,6 +23,7 @@ class KillAppsAccessibilityService : AccessibilityService() {
     private var confirmationClicked = false
     private var confirmationRetries = 0
     private var onStatus: ((String) -> Unit)? = null
+    private val failedPackages = linkedSetOf<String>()
     private var timeout: Runnable? = null
     private var settleRunnable: Runnable? = null
     private var isProcessing = false
@@ -54,7 +55,7 @@ class KillAppsAccessibilityService : AccessibilityService() {
             stopButtonClicked = true
             val clicked = clickableAncestor(stopNode)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
             if (!clicked) {
-                finishCurrent("کلیک روی توقف اجباری برای $currentLabel پذیرفته نشد؛ از آن عبور شد.")
+                finishCurrent("کلیک روی توقف اجباری برای $currentLabel پذیرفته نشد؛ از آن عبور شد.", failed = true)
                 return
             }
             publishStatus("درخواست توقف برای $currentLabel ثبت شد؛ در انتظار نتیجه...")
@@ -165,12 +166,19 @@ class KillAppsAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun finishCurrent(message: String) {
+    private fun finishCurrent(message: String, failed: Boolean = false) {
         timeout?.let(handler::removeCallbacks)
         timeout = null
         settleRunnable?.let(handler::removeCallbacks)
         settleRunnable = null
         val finishedPackage = currentPackage ?: return
+        if (failed) {
+            failedPackages.add(finishedPackage)
+            getSharedPreferences("killapps_ui_preferences", MODE_PRIVATE)
+                .edit()
+                .putStringSet("failed_packages", failedPackages.toSet())
+                .apply()
+        }
         onStatus?.invoke(message)
         currentPackage = null
         completedCount = (completedCount + 1).coerceAtMost(totalCount)
@@ -226,12 +234,12 @@ class KillAppsAccessibilityService : AccessibilityService() {
             timeout?.let(handler::removeCallbacks)
             timeout = Runnable {
                 if (currentPackage == packageName) {
-                    finishCurrent("برای $currentLabel دکمهٔ توقف پیدا نشد یا سیستم اجازه نداد؛ از آن عبور شد.")
+                    finishCurrent("برای $currentLabel دکمهٔ توقف پیدا نشد یا سیستم اجازه نداد؛ از آن عبور شد.", failed = true)
                 }
             }
             handler.postDelayed(timeout!!, 10000)
         } catch (_: Exception) {
-            finishCurrent("باز کردن اطلاعات $currentLabel ناموفق بود؛ از آن عبور شد.")
+            finishCurrent("باز کردن اطلاعات $currentLabel ناموفق بود؛ از آن عبور شد.", failed = true)
         }
     }
 
@@ -290,6 +298,9 @@ class KillAppsAccessibilityService : AccessibilityService() {
                 service.stopButtonClicked = false
                 service.confirmationClicked = false
                 service.confirmationRetries = 0
+                service.failedPackages.clear()
+                service.getSharedPreferences("killapps_ui_preferences", MODE_PRIVATE)
+                    .edit().putStringSet("failed_packages", emptySet()).apply()
                 service.onStatus = status
                 service.isProcessing = true
                 val shown = if (showProgressWindow) {
