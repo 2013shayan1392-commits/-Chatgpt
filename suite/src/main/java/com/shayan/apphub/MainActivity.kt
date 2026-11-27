@@ -68,7 +68,7 @@ import rikka.shizuku.Shizuku
 
 private enum class SuitePage { HOME, KILL_APPS, BREVENT }
 
-private data class InstalledApp(
+data class InstalledApp(
     val label: String,
     val packageName: String,
     val icon: ImageBitmap,
@@ -146,20 +146,14 @@ class MainActivity : ComponentActivity() {
                         )
                         SuitePage.KILL_APPS -> {
                             BackHandler { currentPage = SuitePage.HOME }
-                            EngineScreen(
-                                title = "KillApps",
-                                subtitle = "بستن برنامه‌های انتخاب‌شده",
-                                isBrevent = false,
+                            KillAppsScreen(
                                 apps = installedApps,
-                                shellRunning = shizukuRunning,
-                                shellGranted = shizukuGranted,
-                                operationMessage = operationMessage,
-                                managedPackages = emptySet(),
-                                onBack = { currentPage = SuitePage.HOME },
-                                onConnect = ::connectShizuku,
                                 accessibilityEnabled = accessibilityEnabled,
-                                onEnableAccessibility = ::openAccessibilitySettings,
                                 overlayPermissionGranted = overlayPermissionGranted,
+                                operationMessage = operationMessage,
+                                onBack = { currentPage = SuitePage.HOME },
+                                onRefresh = ::refreshInstalledApps,
+                                onEnableAccessibility = ::openAccessibilitySettings,
                                 onEnableOverlay = ::openOverlaySettings,
                                 onStop = ::stopWithKillApps
                             )
@@ -316,42 +310,25 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (accessibilityEnabled || isKillAppsAccessibilityEnabled()) {
-            if (!Settings.canDrawOverlays(this)) {
-                openOverlaySettings()
-                operationMessage = "برای نمایش درصد پیشرفت هنگام باز بودن تنظیمات، اجازهٔ نمایش روی سایر برنامه‌ها لازم است."
-                return
-            }
-            val labels = installedApps.associate { it.packageName to it.label }
-            val started = KillAppsAccessibilityService.start(this, packages.toList(), labels) { message ->
-                operationMessage = message
-            }
-            if (started) {
-                operationMessage = "عملیات KillApps آغاز شد."
-                return
-            }
-            operationMessage = "سرویس دسترس‌پذیری هنوز متصل نشده است. یک‌بار آن را در تنظیمات خاموش و روشن کن."
+        refreshAccessibilityState()
+        refreshOverlayPermissionState()
+        if (!accessibilityEnabled) {
+            operationMessage = "برای اجرای KillApps، ابتدا سرویس دسترس‌پذیری را فعال کن."
+            return
+        }
+        if (!overlayPermissionGranted) {
+            operationMessage = "برای نمایش روند عملیات، اجازهٔ نمایش روی سایر برنامه‌ها لازم است."
             return
         }
 
-        if (ShizukuShell.hasPermission()) {
-            runPrivileged(
-                KillAppsEngine.forceStopScript(packages),
-                "درخواست توقف اجباری برای " + packages.size + " برنامه ارسال شد."
-            )
+        val labels = installedApps.associate { it.packageName to it.label }
+        val started = KillAppsAccessibilityService.start(this, packages.toList(), labels) { message ->
+            operationMessage = message
+        }
+        if (started) {
+            operationMessage = "عملیات KillApps آغاز شد."
         } else {
-            val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-            var requested = 0
-            packages.forEach { packageName ->
-                try {
-                    manager.killBackgroundProcesses(packageName)
-                    requested++
-                } catch (_: Exception) {
-                    // Android or the OEM may reject this request.
-                }
-            }
-            operationMessage =
-                "درخواست بستن پس‌زمینه برای " + requested + " برنامه فرستاده شد. این روش توقف اجباری کامل نیست."
+            operationMessage = "سرویس دسترس‌پذیری هنوز متصل نشده است. یک‌بار آن را در تنظیمات خاموش و روشن کن."
         }
     }
 
