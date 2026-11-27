@@ -26,7 +26,7 @@
 
         <service
             android:name=".KillAppsAccessibilityService"
-            android:label="Shayan Suite - KillApps"
+            android:label="KillApps"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
