@@ -155,7 +155,7 @@ class MainActivity : ComponentActivity() {
                                 onRefresh = ::refreshInstalledApps,
                                 onEnableAccessibility = ::openAccessibilitySettings,
                                 onEnableOverlay = ::openOverlaySettings,
-                                onStop = ::stopWithKillApps
+                                onStop = { packages, showProgress -> stopWithKillApps(packages, showProgress) }
                             )
                         }
                         SuitePage.BREVENT -> {
@@ -304,25 +304,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun stopWithKillApps(packages: Set<String>) {
+    private fun stopWithKillApps(packages: Set<String>, showProgressWindow: Boolean) {
         if (packages.isEmpty()) {
             operationMessage = "ابتدا حداقل یک برنامه را انتخاب کن."
             return
         }
 
         refreshAccessibilityState()
-        refreshOverlayPermissionState()
+        if (showProgressWindow) refreshOverlayPermissionState()
         if (!accessibilityEnabled) {
             operationMessage = "برای اجرای KillApps، ابتدا سرویس دسترس‌پذیری را فعال کن."
             return
         }
-        if (!overlayPermissionGranted) {
+        if (showProgressWindow && !overlayPermissionGranted) {
             operationMessage = "برای نمایش روند عملیات، اجازهٔ نمایش روی سایر برنامه‌ها لازم است."
             return
         }
 
         val labels = installedApps.associate { it.packageName to it.label }
-        val started = KillAppsAccessibilityService.start(this, packages.toList(), labels) { message ->
+        val started = KillAppsAccessibilityService.start(
+            this,
+            packages.toList(),
+            labels,
+            showProgressWindow
+        ) { message ->
             operationMessage = message
         }
         if (started) {
