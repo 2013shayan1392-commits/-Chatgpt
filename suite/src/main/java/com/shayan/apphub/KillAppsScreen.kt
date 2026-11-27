@@ -39,6 +39,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,11 +82,50 @@ fun KillAppsScreen(
     onEnableOverlay: () -> Unit,
     onStop: (Set<String>, Boolean) -> Unit
 ) {
+    val colors = darkColorScheme(
+        primary = Color(0xFF0DB5AA),
+        secondary = Color(0xFF0DB5AA),
+        background = Color(0xFF515258),
+        surface = Color(0xFF3B3C42),
+        surfaceVariant = Color(0xFF303136),
+        onSurface = Color(0xFFF3F3F6),
+        onBackground = Color(0xFFF3F3F6),
+        onPrimary = Color.White,
+        outlineVariant = Color(0xFF666870)
+    )
+    MaterialTheme(colorScheme = colors) {
+        KillAppsScreenContent(
+            apps = apps,
+            accessibilityEnabled = accessibilityEnabled,
+            overlayPermissionGranted = overlayPermissionGranted,
+            operationMessage = operationMessage,
+            onBack = onBack,
+            onRefresh = onRefresh,
+            onEnableAccessibility = onEnableAccessibility,
+            onEnableOverlay = onEnableOverlay,
+            onStop = onStop
+        )
+    }
+}
+
+@Composable
+private fun KillAppsScreenContent(
+    apps: List<InstalledApp>,
+    accessibilityEnabled: Boolean,
+    overlayPermissionGranted: Boolean,
+    operationMessage: String,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onEnableAccessibility: () -> Unit,
+    onEnableOverlay: () -> Unit,
+    onStop: (Set<String>, Boolean) -> Unit
+) {
     val context = LocalContext.current
     val killPrefs = remember(context) { context.getSharedPreferences("killapps_ui_preferences", Context.MODE_PRIVATE) }
     var mode by remember { mutableStateOf(if (killPrefs.getString("list_mode", "CUSTOM") == "ALL") KillAppsListMode.ALL else KillAppsListMode.CUSTOM) }
     var includeUserApps by remember { mutableStateOf(killPrefs.getBoolean("include_user_apps", true)) }
     var includeSystemApps by remember { mutableStateOf(killPrefs.getBoolean("include_system_apps", true)) }
+    var showInstalledApps by remember { mutableStateOf(killPrefs.getBoolean("show_installed_apps", false)) }
     var selectedPackages by remember {
         mutableStateOf(killPrefs.getStringSet("selected_packages", emptySet())?.toSet() ?: emptySet())
     }
@@ -110,17 +150,19 @@ fun KillAppsScreen(
         failedPackages = killPrefs.getStringSet("failed_packages", emptySet())?.toSet() ?: emptySet()
     }
 
-    val visibleApps = remember(apps, includeUserApps, includeSystemApps, searchText) {
+    val runningCount = apps.count { it.isRunning }
+    val visibleApps = remember(apps, includeUserApps, includeSystemApps, searchText, showInstalledApps) {
         apps.filter { app ->
             val categoryEnabled = if (app.isSystem) includeSystemApps else includeUserApps
-            categoryEnabled && (
+            categoryEnabled && (showInstalledApps || app.isRunning) && (
                 searchText.isBlank() ||
                     app.label.contains(searchText, ignoreCase = true) ||
                     app.packageName.contains(searchText, ignoreCase = true)
                 )
         }
     }
-    val eligibleApps = visibleApps.filterNot { it.packageName in exceptionPackages }
+    // Browsing may include installed apps, but the stop queue contains only running processes.
+    val eligibleApps = visibleApps.filter { it.isRunning && it.packageName !in exceptionPackages }
     val eligiblePackages = eligibleApps.map { it.packageName }.toSet()
     val selectedVisible = selectedPackages.intersect(eligiblePackages)
     val packagesToClose = if (mode == KillAppsListMode.ALL) eligiblePackages else selectedVisible
@@ -143,6 +185,7 @@ fun KillAppsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(58.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -150,7 +193,7 @@ fun KillAppsScreen(
                 Icon(Icons.Rounded.ArrowBack, contentDescription = "بازگشت")
             }
             Text(
-                "KillApps",
+                "KillApps Pro",
                 modifier = Modifier.weight(1f),
                 fontSize = 21.sp,
                 fontWeight = FontWeight.Bold
@@ -179,6 +222,7 @@ fun KillAppsScreen(
         ) {
             item {
                 MemoryCard(
+                    runningCount = runningCount,
                     usedBytes = (memory.first - memory.second).coerceAtLeast(0L),
                     totalBytes = memory.first,
                     freeBytes = memory.second,
@@ -219,6 +263,32 @@ fun KillAppsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ModeChoice(
+                        text = "برنامه‌های درحال اجرا",
+                        selected = !showInstalledApps,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            showInstalledApps = false
+                            killPrefs.edit().putBoolean("show_installed_apps", false).apply()
+                        }
+                    )
+                    ModeChoice(
+                        text = "همهٔ برنامه‌های نصب‌شده",
+                        selected = showInstalledApps,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            showInstalledApps = true
+                            killPrefs.edit().putBoolean("show_installed_apps", true).apply()
+                        }
+                    )
                 }
             }
 
@@ -269,8 +339,8 @@ fun KillAppsScreen(
                         Text("برنامه‌ها", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         Text(
                             when (mode) {
-                                KillAppsListMode.ALL -> "${eligibleApps.size} برنامه برای پردازش · ${exceptionPackages.size} استثنا"
-                                KillAppsListMode.CUSTOM -> "${selectedVisible.size} انتخاب‌شده از ${eligibleApps.size} · ${exceptionPackages.size} استثنا"
+                                KillAppsListMode.ALL -> "${eligibleApps.size} برنامهٔ درحال اجرا برای پردازش · ${exceptionPackages.size} استثنا"
+                                KillAppsListMode.CUSTOM -> "${selectedVisible.size} انتخاب‌شده از ${eligibleApps.size} برنامهٔ درحال اجرا · ${exceptionPackages.size} استثنا"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -593,57 +663,82 @@ fun KillAppsScreen(
 
 @Composable
 private fun MemoryCard(
+    runningCount: Int,
     usedBytes: Long,
     totalBytes: Long,
     freeBytes: Long,
     onRefresh: () -> Unit
 ) {
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
     val progressColor = MaterialTheme.colorScheme.primary
     val ratio = if (totalBytes > 0L) (usedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
     Card(
-        shape = RoundedCornerShape(15.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(7.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(15.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 166.dp).padding(horizontal = 9.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(92.dp)) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val width = 8.dp.toPx()
-                    drawArc(
-                        color = trackColor,
-                        startAngle = -90f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        style = Stroke(width = width, cap = StrokeCap.Round)
-                    )
-                    drawArc(
-                        color = progressColor,
-                        startAngle = -90f,
-                        sweepAngle = ratio * 360f,
-                        useCenter = false,
-                        style = Stroke(width = width, cap = StrokeCap.Round)
-                    )
+            Column(
+                modifier = Modifier.weight(1.05f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(126.dp)) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val stroke = 3.5.dp.toPx()
+                        drawArc(
+                            color = trackColor,
+                            startAngle = 135f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            style = Stroke(width = stroke, cap = StrokeCap.Round)
+                        )
+                        drawArc(
+                            color = progressColor,
+                            startAngle = 135f,
+                            sweepAngle = ratio * 360f,
+                            useCenter = false,
+                            style = Stroke(width = stroke, cap = StrokeCap.Round)
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text((ratio * 100).toInt().toString(), fontSize = 31.sp, fontWeight = FontWeight.Light, color = progressColor)
+                            Text("%", fontSize = 15.sp, color = progressColor, modifier = Modifier.padding(top = 5.dp))
+                        }
+                        Text("RAM", fontSize = 11.sp, color = progressColor)
+                    }
                 }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${(ratio * 100).toInt()}%", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    Text("RAM", style = MaterialTheme.typography.labelSmall)
-                }
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("حافظهٔ آزاد", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(formatMemory(freeBytes), fontSize = 23.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "${formatMemory(usedBytes)} استفاده‌شده از ${formatMemory(totalBytes)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    formatMemory(usedBytes) + " / " + formatMemory(totalBytes),
+                    fontSize = 10.sp,
+                    color = progressColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
                 )
             }
-            IconButton(onClick = onRefresh) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "به‌روزرسانی RAM")
+            Column(
+                modifier = Modifier.weight(1.12f).padding(start = 4.dp, end = 3.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(runningCount.toString(), color = progressColor, fontSize = 27.sp, fontWeight = FontWeight.Light)
+                    Text("برنامه‌های درحال اجرا", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
+                }
+                Spacer(Modifier.height(17.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(formatMemory(freeBytes), color = progressColor, fontSize = 21.sp)
+                    Text("باقیمانده RAM", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+            IconButton(onClick = onRefresh, modifier = Modifier.align(Alignment.Top).size(30.dp)) {
+                Icon(Icons.Rounded.Refresh, contentDescription = "به‌روزرسانی RAM", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
