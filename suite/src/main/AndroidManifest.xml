@@ -1,17 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+
     <queries>
-        <package android:name="me.piebridge.brevent" />
-        <package android:name="com.tafayor.killall" />
+        <package android:name="moe.shizuku.privileged.api" />
     </queries>
 
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_app_hub"
-        android:label="Shayan App Hub"
+        android:label="Shayan Suite"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <activity
             android:name=".MainActivity"
