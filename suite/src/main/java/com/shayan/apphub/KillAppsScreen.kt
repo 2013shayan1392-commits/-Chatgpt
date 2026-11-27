@@ -80,10 +80,14 @@ fun KillAppsScreen(
     onEnableOverlay: () -> Unit,
     onStop: (Set<String>, Boolean) -> Unit
 ) {
-    var mode by remember { mutableStateOf(KillAppsListMode.CUSTOM) }
-    var includeUserApps by remember { mutableStateOf(true) }
-    var includeSystemApps by remember { mutableStateOf(true) }
-    var selectedPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val context = LocalContext.current
+    val killPrefs = remember(context) { context.getSharedPreferences("killapps_ui_preferences", Context.MODE_PRIVATE) }
+    var mode by remember { mutableStateOf(if (killPrefs.getString("list_mode", "CUSTOM") == "ALL") KillAppsListMode.ALL else KillAppsListMode.CUSTOM) }
+    var includeUserApps by remember { mutableStateOf(killPrefs.getBoolean("include_user_apps", true)) }
+    var includeSystemApps by remember { mutableStateOf(killPrefs.getBoolean("include_system_apps", true)) }
+    var selectedPackages by remember {
+        mutableStateOf(killPrefs.getStringSet("selected_packages", emptySet())?.toSet() ?: emptySet())
+    }
     var searchVisible by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     var showGuide by remember { mutableStateOf(false) }
@@ -91,8 +95,6 @@ fun KillAppsScreen(
     var showExceptionsDialog by remember { mutableStateOf(false) }
     var showFailureDialog by remember { mutableStateOf(false) }
     var permissionStep by remember { mutableStateOf<KillAppsPermissionStep?>(null) }
-    val context = LocalContext.current
-    val killPrefs = remember(context) { context.getSharedPreferences("killapps_ui_preferences", Context.MODE_PRIVATE) }
     var showProgressWindow by remember { mutableStateOf(killPrefs.getBoolean("show_progress_window", true)) }
     var exceptionPackages by remember {
         mutableStateOf(killPrefs.getStringSet("exception_packages", emptySet())?.toSet() ?: emptySet())
@@ -195,13 +197,19 @@ fun KillAppsScreen(
                         CategorySwitchRow(
                             label = "برنامه‌های کاربری",
                             checked = includeUserApps,
-                            onCheckedChange = { includeUserApps = it }
+                            onCheckedChange = {
+                                includeUserApps = it
+                                killPrefs.edit().putBoolean("include_user_apps", it).apply()
+                            }
                         )
                         Divider(color = MaterialTheme.colorScheme.outlineVariant)
                         CategorySwitchRow(
                             label = "برنامه‌های سیستمی",
                             checked = includeSystemApps,
-                            onCheckedChange = { includeSystemApps = it }
+                            onCheckedChange = {
+                                includeSystemApps = it
+                                killPrefs.edit().putBoolean("include_system_apps", it).apply()
+                            }
                         )
                         Text(
                             "توقف اجباری بعضی برنامه‌های سیستمی ممکن است روی عملکرد گوشی اثر بگذارد.",
@@ -222,13 +230,19 @@ fun KillAppsScreen(
                         text = "همهٔ برنامه‌ها",
                         selected = mode == KillAppsListMode.ALL,
                         modifier = Modifier.weight(1f),
-                        onClick = { mode = KillAppsListMode.ALL }
+                        onClick = {
+                            mode = KillAppsListMode.ALL
+                            killPrefs.edit().putString("list_mode", mode.name).apply()
+                        }
                     )
                     ModeChoice(
                         text = "فهرست سفارشی",
                         selected = mode == KillAppsListMode.CUSTOM,
                         modifier = Modifier.weight(1f),
-                        onClick = { mode = KillAppsListMode.CUSTOM }
+                        onClick = {
+                            mode = KillAppsListMode.CUSTOM
+                            killPrefs.edit().putString("list_mode", mode.name).apply()
+                        }
                     )
                 }
             }
@@ -308,6 +322,7 @@ fun KillAppsScreen(
                                 } else {
                                     selectedPackages + app.packageName
                                 }
+                                killPrefs.edit().putStringSet("selected_packages", selectedPackages.toSet()).apply()
                             }
                         }
                     )
