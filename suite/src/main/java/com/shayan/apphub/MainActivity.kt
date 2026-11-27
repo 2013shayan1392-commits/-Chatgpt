@@ -2,9 +2,6 @@ package com.shayan.apphub
 
 import android.app.ActivityManager
 import android.content.Intent
-import android.content.ComponentName
-import android.provider.Settings
-import android.provider.Settings.Secure
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Build
@@ -66,7 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import rikka.shizuku.Shizuku
 
-private enum class SuitePage { HOME, KILL_APPS, BREVENT }
+private enum class SuitePage { HOME, BREVENT }
 
 data class InstalledApp(
     val label: String,
@@ -81,8 +78,6 @@ class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var shizukuRunning by mutableStateOf(false)
     private var shizukuGranted by mutableStateOf(false)
-    private var accessibilityEnabled by mutableStateOf(false)
-    private var overlayPermissionGranted by mutableStateOf(false)
     private var operationMessage by mutableStateOf("")
     private var managedPackages by mutableStateOf<Set<String>>(emptySet())
 
@@ -109,8 +104,6 @@ class MainActivity : ComponentActivity() {
         managedPackages = preferences.getStringSet("packages", emptySet())?.toSet() ?: emptySet()
         refreshInstalledApps()
         refreshShizukuState()
-        refreshAccessibilityState()
-        refreshOverlayPermissionState()
 
         setContent {
             val dark = isSystemInDarkTheme()
@@ -141,23 +134,9 @@ class MainActivity : ComponentActivity() {
                         SuitePage.HOME -> HomeScreen(
                             deviceLabel = Build.MANUFACTURER + " " + Build.MODEL,
                             androidLabel = "Android " + Build.VERSION.RELEASE + " · API " + Build.VERSION.SDK_INT,
-                            onOpenKillApps = { currentPage = SuitePage.KILL_APPS },
+                            onOpenKillApps = { startActivity(Intent(this@MainActivity, com.shayan.apphub.killapps.CleanKillAppsActivity::class.java)) },
                             onOpenBrevent = { currentPage = SuitePage.BREVENT }
                         )
-                        SuitePage.KILL_APPS -> {
-                            BackHandler { currentPage = SuitePage.HOME }
-                            KillAppsScreen(
-                                apps = installedApps,
-                                accessibilityEnabled = accessibilityEnabled,
-                                overlayPermissionGranted = overlayPermissionGranted,
-                                operationMessage = operationMessage,
-                                onBack = { currentPage = SuitePage.HOME },
-                                onRefresh = ::refreshInstalledApps,
-                                onEnableAccessibility = ::openAccessibilitySettings,
-                                onEnableOverlay = ::openOverlaySettings,
-                                onStop = { packages, showProgress -> stopWithKillApps(packages, showProgress) }
-                            )
-                        }
                         SuitePage.BREVENT -> {
                             BackHandler { currentPage = SuitePage.HOME }
                             EngineScreen(
@@ -195,8 +174,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshShizukuState()
-        refreshAccessibilityState()
-        refreshOverlayPermissionState()
         refreshInstalledApps()
     }
 
@@ -264,76 +241,6 @@ class MainActivity : ComponentActivity() {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         } catch (_: Exception) {
             operationMessage = "مرورگر برای باز کردن لینک در دسترس نیست."
-        }
-    }
-
-    private fun isKillAppsAccessibilityEnabled(): Boolean {
-        val expected = ComponentName(this, KillAppsAccessibilityService::class.java).flattenToString()
-        val enabled = Secure.getString(contentResolver, Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
-    }
-
-    private fun refreshAccessibilityState() {
-        accessibilityEnabled = isKillAppsAccessibilityEnabled()
-    }
-
-    private fun refreshOverlayPermissionState() {
-        overlayPermissionGranted = Settings.canDrawOverlays(this)
-    }
-
-    private fun openOverlaySettings() {
-        try {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + packageName)
-                )
-            )
-            operationMessage = "اجازهٔ نمایش روی سایر برنامه‌ها را فعال کن و به Shayan Suite برگرد."
-        } catch (_: Exception) {
-            operationMessage = "باز کردن تنظیمات نمایش روی سایر برنامه‌ها ممکن نشد."
-        }
-    }
-
-    private fun openAccessibilitySettings() {
-        try {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            operationMessage = "سرویس Shayan Suite را در بخش دسترس‌پذیری فعال کن و سپس به برنامه برگرد."
-        } catch (_: Exception) {
-            operationMessage = "باز کردن تنظیمات دسترس‌پذیری ممکن نشد."
-        }
-    }
-
-    private fun stopWithKillApps(packages: Set<String>, showProgressWindow: Boolean) {
-        if (packages.isEmpty()) {
-            operationMessage = "ابتدا حداقل یک برنامه را انتخاب کن."
-            return
-        }
-
-        refreshAccessibilityState()
-        if (showProgressWindow) refreshOverlayPermissionState()
-        if (!accessibilityEnabled) {
-            operationMessage = "برای اجرای KillApps، ابتدا سرویس دسترس‌پذیری را فعال کن."
-            return
-        }
-        if (showProgressWindow && !overlayPermissionGranted) {
-            operationMessage = "برای نمایش روند عملیات، اجازهٔ نمایش روی سایر برنامه‌ها لازم است."
-            return
-        }
-
-        val labels = installedApps.associate { it.packageName to it.label }
-        val started = KillAppsAccessibilityService.start(
-            this,
-            packages.toList(),
-            labels,
-            showProgressWindow
-        ) { message ->
-            operationMessage = message
-        }
-        if (started) {
-            operationMessage = "عملیات KillApps آغاز شد."
-        } else {
-            operationMessage = "سرویس دسترس‌پذیری هنوز متصل نشده است. یک‌بار آن را در تنظیمات خاموش و روشن کن."
         }
     }
 
@@ -555,10 +462,6 @@ private fun EngineScreen(
     onStop: ((Set<String>) -> Unit)? = null,
     onRestrict: ((Set<String>) -> Unit)? = null,
     onRestore: ((Set<String>) -> Unit)? = null,
-    accessibilityEnabled: Boolean = false,
-    onEnableAccessibility: (() -> Unit)? = null,
-    overlayPermissionGranted: Boolean = true,
-    onEnableOverlay: (() -> Unit)? = null
 ) {
     var selectedPackages by remember(title) { mutableStateOf(setOf<String>()) }
 
@@ -577,56 +480,6 @@ private fun EngineScreen(
         }
 
         Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-        if (!isBrevent && !accessibilityEnabled) {
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("دسترس‌پذیری KillApps", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "برای پردازش خودکار صفحهٔ توقف اجباری، این سرویس را فعال کن.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    OutlinedButton(onClick = { onEnableAccessibility?.invoke() }) {
-                        Text("فعال‌سازی")
-                    }
-                }
-            }
-        }
-
-        if (!isBrevent && !overlayPermissionGranted) {
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("نمایش درصد پیشرفت", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "برای نمایش صفحهٔ پیشرفت روی تنظیمات اندروید، این اجازه لازم است.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    OutlinedButton(onClick = { onEnableOverlay?.invoke() }) {
-                        Text("فعال‌سازی")
-                    }
-                }
-            }
-        }
 
         if (isBrevent && !shellGranted) {
             Card(
