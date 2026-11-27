@@ -66,7 +66,8 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
         }
 
         activePackage = queue.removeFirst()
-        activeLabel = labels[activePackage] ?: activePackage.orEmpty()
+        val nextPackage = activePackage ?: return
+        activeLabel = labels[nextPackage] ?: nextPackage
         stage = Stage.OPENING_INFO
         stopButtonClicked = false
         publish("بازکردن تنظیمات برنامه: " + activeLabel)
