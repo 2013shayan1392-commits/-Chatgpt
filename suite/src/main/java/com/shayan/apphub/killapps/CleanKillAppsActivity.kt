@@ -171,7 +171,6 @@ private class KillAppsRepository(context: Context) {
     fun loadApps(): List<KillAppsPackage> {
         val now = System.currentTimeMillis()
         val lastUsed = readLastUsed()
-        val persistentPackages = readPersistentPackages()
         return try {
             appContext.packageManager.getInstalledApplications(PackageManager.MATCH_DISABLED_COMPONENTS)
                 .asSequence()
@@ -183,7 +182,7 @@ private class KillAppsRepository(context: Context) {
                         info.packageName
                     }
                     val system = (info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
-                    val persistent = (info.flags and ApplicationInfo.FLAG_PERSISTENT) != 0 || info.packageName in persistentPackages
+                    val persistent = (info.flags and ApplicationInfo.FLAG_PERSISTENT) != 0
                     KillAppsPackage(
                         packageName = info.packageName,
                         label = label,
@@ -200,19 +199,6 @@ private class KillAppsRepository(context: Context) {
                 .toList()
         } catch (_: Exception) {
             emptyList()
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun readPersistentPackages(): Set<String> {
-        return try {
-            val manager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            manager.runningAppProcesses.orEmpty()
-                .filter { it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERSISTENT }
-                .flatMap { it.pkgList.orEmpty().asList() }
-                .toSet()
-        } catch (_: Exception) {
-            emptySet()
         }
     }
 
@@ -390,9 +376,10 @@ private fun CleanKillAppsScreen(
     }
 
     fun toggleException(packageName: String) {
-        exceptions = if (packageName in exceptions) exceptions - packageName else exceptions + packageName
+        val wasException = packageName in exceptions
+        exceptions = if (wasException) exceptions - packageName else exceptions + packageName
         repository.setExceptions(exceptions)
-        notice = if (packageName in exceptions) "برنامه به استثناها اضافه شد." else "برنامه از استثناها حذف شد."
+        notice = if (wasException) "برنامه از استثناها حذف شد." else "برنامه به استثناها اضافه شد."
     }
 
     fun toggleCustom(packageName: String) {
