@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
@@ -669,7 +670,7 @@ private fun MemoryCard(
     freeBytes: Long,
     onRefresh: () -> Unit
 ) {
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
+    val trackColor = Color(0xFFE0E2EE)
     val progressColor = MaterialTheme.colorScheme.primary
     val ratio = if (totalBytes > 0L) (usedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
     Card(
