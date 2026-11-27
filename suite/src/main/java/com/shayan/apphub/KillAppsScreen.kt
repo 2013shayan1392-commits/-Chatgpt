@@ -178,8 +178,8 @@ private fun KillAppsScreenContent(
 
     fun requestClose() {
         when {
-            packagesToClose.isEmpty() -> Unit
             !accessibilityEnabled -> permissionStep = KillAppsPermissionStep.DISCLOSURE
+            packagesToClose.isEmpty() -> operationMessage.let { /* no running apps are currently available */ }
             showProgressWindow && !overlayPermissionGranted -> permissionStep = KillAppsPermissionStep.OVERLAY
             else -> onStop(packagesToClose, showProgressWindow)
         }
@@ -258,6 +258,32 @@ private fun KillAppsScreenContent(
                         onRefresh()
                     }
                 )
+            }
+
+            if (!accessibilityEnabled) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(7.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("فعال‌سازی سرویس دسترس‌پذیری", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "برای اجرای عملیات توقف، سرویس Shayan Suite را در تنظیمات اندروید فعال کن.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(onClick = onEnableAccessibility) { Text("فعال‌سازی") }
+                        }
+                    }
+                }
             }
 
             item {
