@@ -540,7 +540,7 @@ fun KillAppsScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        "\${failedPackages.size} مورد از آخرین عملیات ثبت شده است. فقط خطاهای قابل‌شناسایی در این فهرست می‌آیند.",
+                        "${failedPackages.size} مورد از آخرین عملیات ثبت شده است. فقط خطاهای قابل‌شناسایی در این فهرست می‌آیند.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
