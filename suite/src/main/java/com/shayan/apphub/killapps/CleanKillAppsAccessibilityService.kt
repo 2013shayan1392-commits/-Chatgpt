@@ -239,7 +239,7 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
             completed = total,
             total = total,
             appName = "پایان عملیات",
-            message = "پردازش فهرست انتخاب‌شده تمام شد."
+            messageText = "پردازش فهرست انتخاب‌شده تمام شد."
         )
         handler.postDelayed({
             CleanKillAppsProgressWindow.dismiss()
@@ -268,7 +268,7 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
             completed = completed,
             total = total,
             appName = activeLabel.ifBlank { "KillApps" },
-            message = message
+            messageText = message
         )
         sendStatus(message, completed, total, false)
     }
