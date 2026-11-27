@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -73,7 +75,7 @@ fun KillAppsScreen(
     onRefresh: () -> Unit,
     onEnableAccessibility: () -> Unit,
     onEnableOverlay: () -> Unit,
-    onStop: (Set<String>) -> Unit
+    onStop: (Set<String>, Boolean) -> Unit
 ) {
     var mode by remember { mutableStateOf(KillAppsListMode.CUSTOM) }
     var includeUserApps by remember { mutableStateOf(true) }
@@ -83,8 +85,14 @@ fun KillAppsScreen(
     var searchText by remember { mutableStateOf("") }
     var showGuide by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showExceptionsDialog by remember { mutableStateOf(false) }
     var permissionStep by remember { mutableStateOf<KillAppsPermissionStep?>(null) }
     val context = LocalContext.current
+    val killPrefs = remember(context) { context.getSharedPreferences("killapps_ui_preferences", Context.MODE_PRIVATE) }
+    var showProgressWindow by remember { mutableStateOf(killPrefs.getBoolean("show_progress_window", true)) }
+    var exceptionPackages by remember {
+        mutableStateOf(killPrefs.getStringSet("exception_packages", emptySet())?.toSet() ?: emptySet())
+    }
     var memory by remember { mutableStateOf(readMemory(context)) }
 
     val visibleApps = remember(apps, includeUserApps, includeSystemApps, searchText) {
@@ -97,19 +105,17 @@ fun KillAppsScreen(
                 )
         }
     }
-    val selectedVisible = selectedPackages.intersect(visibleApps.map { it.packageName }.toSet())
-    val packagesToClose = if (mode == KillAppsListMode.ALL) {
-        visibleApps.map { it.packageName }.toSet()
-    } else {
-        selectedVisible
-    }
+    val eligibleApps = visibleApps.filterNot { it.packageName in exceptionPackages }
+    val eligiblePackages = eligibleApps.map { it.packageName }.toSet()
+    val selectedVisible = selectedPackages.intersect(eligiblePackages)
+    val packagesToClose = if (mode == KillAppsListMode.ALL) eligiblePackages else selectedVisible
 
     fun requestClose() {
         when {
             packagesToClose.isEmpty() -> Unit
             !accessibilityEnabled -> permissionStep = KillAppsPermissionStep.DISCLOSURE
-            !overlayPermissionGranted -> permissionStep = KillAppsPermissionStep.OVERLAY
-            else -> onStop(packagesToClose)
+            showProgressWindow && !overlayPermissionGranted -> permissionStep = KillAppsPermissionStep.OVERLAY
+            else -> onStop(packagesToClose, showProgressWindow)
         }
     }
 
@@ -136,6 +142,9 @@ fun KillAppsScreen(
             )
             IconButton(onClick = { showGuide = true }) {
                 Icon(Icons.Rounded.Info, contentDescription = "راهنما")
+            }
+            IconButton(onClick = { showExceptionsDialog = true }) {
+                Icon(Icons.Rounded.Bookmark, contentDescription = "فهرست استثناها")
             }
             IconButton(onClick = { showSettings = true }) {
                 Icon(Icons.Rounded.Settings, contentDescription = "تنظیمات")
@@ -228,8 +237,8 @@ fun KillAppsScreen(
                         Text("برنامه‌ها", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         Text(
                             when (mode) {
-                                KillAppsListMode.ALL -> "${visibleApps.size} برنامه در گروه‌های فعال"
-                                KillAppsListMode.CUSTOM -> "${selectedVisible.size} برنامه انتخاب‌شده از ${visibleApps.size}"
+                                KillAppsListMode.ALL -> "${eligibleApps.size} برنامه برای پردازش · ${exceptionPackages.size} استثنا"
+                                KillAppsListMode.CUSTOM -> "${selectedVisible.size} انتخاب‌شده از ${eligibleApps.size} · ${exceptionPackages.size} استثنا"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -272,10 +281,11 @@ fun KillAppsScreen(
                 items(visibleApps, key = { it.packageName }) { app ->
                     KillAppsAppRow(
                         app = app,
-                        selectable = mode == KillAppsListMode.CUSTOM,
+                        selectable = mode == KillAppsListMode.CUSTOM && app.packageName !in exceptionPackages,
                         selected = app.packageName in selectedVisible,
+                        isException = app.packageName in exceptionPackages,
                         onClick = {
-                            if (mode == KillAppsListMode.CUSTOM) {
+                            if (mode == KillAppsListMode.CUSTOM && app.packageName !in exceptionPackages) {
                                 selectedPackages = if (app.packageName in selectedPackages) {
                                     selectedPackages - app.packageName
                                 } else {
@@ -327,7 +337,7 @@ fun KillAppsScreen(
             title = { Text("استفاده از سرویس دسترس‌پذیری") },
             text = {
                 Text(
-                    "برای پیدا کردن دکمهٔ «توقف اجباری» در تنظیمات سیستم، سرویس باید محتوای پنجرهٔ فعال و تغییر صفحه‌ها را بررسی کند و روی دکمهٔ مربوط بزند. این سرویس در این برنامه برای اجرای همین فرایند استفاده می‌شود."
+                    "برای پیدا کردن دکمهٔ «توقف اجباری» در تنظیمات سیستم، سرویس باید محتوای پنجرهٔ فعال و رویدادهای تغییر صفحه را بررسی کند و روی دکمهٔ مربوط بزند. این سرویس فقط برای همین فرایند در خود دستگاه استفاده می‌شود؛ هیچ داده‌ای از طریق سرویس دسترس‌پذیری جمع‌آوری یا ارسال نمی‌شود."
                 )
             },
             confirmButton = {
@@ -399,15 +409,35 @@ fun KillAppsScreen(
             title = { Text("تنظیمات KillApps") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("نمایش پنجرهٔ پیشرفت هنگام بستن برنامه‌ها")
-                    Text(
-                        "نمایش پنجرهٔ پیشرفت برای اطلاع از روند عملیات فعال است.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("نمایش پنجرهٔ پیشرفت", fontWeight = FontWeight.Medium)
+                            Text(
+                                "هنگام بستن برنامه‌ها، درصد پیشرفت نمایش داده شود.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showProgressWindow,
+                            onCheckedChange = {
+                                showProgressWindow = it
+                                killPrefs.edit().putBoolean("show_progress_window", it).apply()
+                            }
+                        )
+                    }
                     Divider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Text("مجوز دسترس‌پذیری: ${if (accessibilityEnabled) "فعال" else "غیرفعال"}")
-                    Text("نمایش روی برنامه‌های دیگر: ${if (overlayPermissionGranted) "فعال" else "غیرفعال"}")
+                    TextButton(onClick = {
+                        showSettings = false
+                        showExceptionsDialog = true
+                    }) {
+                        Text("مدیریت فهرست استثناها (\${exceptionPackages.size})")
+                    }
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text("مجوز دسترس‌پذیری: \${if (accessibilityEnabled) "فعال" else "غیرفعال"}")
+                    if (showProgressWindow) {
+                        Text("نمایش روی برنامه‌های دیگر: \${if (overlayPermissionGranted) "فعال" else "غیرفعال"}")
+                    }
                 }
             },
             confirmButton = {
@@ -415,7 +445,55 @@ fun KillAppsScreen(
             }
         )
     }
-}
+
+    if (showExceptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showExceptionsDialog = false },
+            title = { Text("فهرست استثناها") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        "برنامه‌های این فهرست در هیچ‌یک از حالت‌های بستن انتخاب نمی‌شوند.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    apps.forEach { app ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.foundation.Image(
+                                bitmap = app.icon,
+                                contentDescription = app.label,
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Text(
+                                app.label,
+                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Checkbox(
+                                checked = app.packageName in exceptionPackages,
+                                onCheckedChange = { checked ->
+                                    exceptionPackages = if (checked) exceptionPackages + app.packageName
+                                    else exceptionPackages - app.packageName
+                                    killPrefs.edit().putStringSet("exception_packages", exceptionPackages.toSet()).apply()
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showExceptionsDialog = false }) { Text("تمام") }
+            }
+        )
+    }
+
 
 @Composable
 private fun MemoryCard(
@@ -517,6 +595,7 @@ private fun KillAppsAppRow(
     app: InstalledApp,
     selectable: Boolean,
     selected: Boolean,
+    isException: Boolean,
     onClick: () -> Unit
 ) {
     Surface(
@@ -537,7 +616,7 @@ private fun KillAppsAppRow(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(app.label, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    if (app.isSystem) "برنامهٔ سیستمی" else if (app.isRunning) "در حال اجرا" else "برنامهٔ کاربری",
+                    if (isException) "فهرست استثناها" else if (app.isSystem) "برنامهٔ سیستمی" else if (app.isRunning) "در حال اجرا" else "برنامهٔ کاربری",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
