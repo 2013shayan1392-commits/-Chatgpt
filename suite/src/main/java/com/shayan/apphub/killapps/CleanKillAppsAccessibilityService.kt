@@ -93,7 +93,7 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
                 finishActive(false, "دکمهٔ توقف در صفحهٔ اطلاعات پیدا نشد یا سیستم اجازه نداد.")
             }
         }
-        handler.postDelayed(timeoutRunnable!!, 9000)
+        handler.postDelayed(timeoutRunnable!!, 15000)
     }
 
     private fun inspectActiveWindow() {
@@ -153,19 +153,14 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
             ""
         }
         val labelMatch = text in setOf(
-            "force stop",
-            "stop",
-            "توقف اجباری",
-            "توقف اجباری",
-            "متوقف کردن اجباری",
-            "توقف",
-            "zorla durdur",
-            "forzar detención",
-            "forçar parada",
-            "erzwingen beenden",
-            "arrêter de force"
+            "force stop", "force stop app", "stop app", "end app",
+            "توقف اجباری", "متوقف کردن اجباری", "اجبار به توقف",
+            "zorla durdur", "forzar detención", "forzar cierre",
+            "forçar parada", "forçar fechamento", "erzwingen beenden",
+            "beenden erzwingen", "forcer l'arrêt", "arrêter de force"
         )
-        val idMatch = viewId.contains("force_stop") || viewId.contains("force-stop")
+        val idMatch = viewId.contains("force_stop") || viewId.contains("force-stop") ||
+            viewId.endsWith(":id/stop_button") || viewId.endsWith(":id/force_stop_button")
         return labelMatch || idMatch
     }
 
@@ -175,6 +170,9 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
             text.contains("force stop?") ||
             text.contains("if you force stop") ||
             text.contains("force stop the app") ||
+            text.contains("force stop this application") ||
+            text.contains("do you want to stop") ||
+            text.contains("stop this app") ||
             text.contains("ممکن است برنامه") ||
             text.contains("می‌خواهید این برنامه را متوقف") ||
             text.contains("آیا می‌خواهید") ||
@@ -223,7 +221,7 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
     private fun finishActive(success: Boolean, message: String) {
         clearTimers()
         val finishedPackage = activePackage ?: return
-        if (!success) failures.add(finishedPackage)
+        if (success) failures.remove(finishedPackage) else failures.add(finishedPackage)
         completed = (completed + 1).coerceAtMost(total)
         activePackage = null
         stopButtonClicked = false
@@ -377,6 +375,10 @@ class CleanKillAppsAccessibilityService : AccessibilityService() {
                 service.labels.clear()
                 service.labels.putAll(labels)
                 service.failures.clear()
+                service.failures.addAll(
+                    context.getSharedPreferences("killapps_fresh_state_v1", Context.MODE_PRIVATE)
+                        .getStringSet("failed", emptySet()).orEmpty()
+                )
                 service.completed = 0
                 service.total = service.queue.size
                 service.onFinished = onFinished
