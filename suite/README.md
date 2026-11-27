@@ -39,3 +39,12 @@ The app uses Shizuku API 13.1.5 and a separate AIDL UserService process to execu
 Run: gradle :suite:assembleDebug
 
 Output: suite/build/outputs/apk/debug/suite-debug.apk
+
+
+## KillApps progress and permissions update
+
+- The Accessibility control is shown only while the service is disabled; it is removed from the KillApps screen after Android reports it enabled.
+- The Shizuku/ADB authorization panel is not part of KillApps. It is shown in Brevent only while authorization is missing, then removed after grant.
+- KillApps uses Android's special "display over other apps" permission for a full-screen progress overlay with a circular percentage, current app label, and cancel control.
+- During Accessibility processing, each app's App info screen is opened, the Force stop control is clicked at most once, a confirmation dialog is handled separately when detected, and Back is invoked before moving to the next package.
+- The app list contains installed packages, including system apps. A "running" label is best-effort and uses the process information Android makes visible to the app; Android versions and OEM builds may limit that visibility.
