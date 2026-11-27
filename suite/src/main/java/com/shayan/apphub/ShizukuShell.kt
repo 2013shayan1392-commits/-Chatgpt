@@ -6,6 +6,7 @@ import android.content.ServiceConnection
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import java.util.concurrent.atomic.AtomicBoolean
 import rikka.shizuku.Shizuku
 
 data class ShellResult(
@@ -47,17 +48,22 @@ object ShizukuShell {
             .version(2)
 
         val mainHandler = Handler(Looper.getMainLooper())
+        val completed = AtomicBoolean(false)
+        fun finish(result: ShellResult) {
+            if (completed.compareAndSet(false, true)) {
+                mainHandler.post { onComplete(result) }
+            }
+        }
+
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 val remote = ICommandService.Stub.asInterface(binder)
                 if (remote == null) {
-                    mainHandler.post {
-                        try {
-                            Shizuku.unbindUserService(args, this, true)
-                        } catch (_: Throwable) {
-                        }
-                        onComplete(ShellResult(-1, "", "Shizuku UserService returned an invalid binder."))
+                    try {
+                        Shizuku.unbindUserService(args, this, true)
+                    } catch (_: Throwable) {
                     }
+                    finish(ShellResult(-1, "", "Shizuku UserService returned an invalid binder."))
                     return
                 }
 
@@ -68,31 +74,27 @@ object ShizukuShell {
                         ShellResult(-1, "", error.message ?: "Remote shell execution failed.")
                     }
 
-                    mainHandler.post {
-                        try {
-                            Shizuku.unbindUserService(args, this, true)
-                        } catch (_: Throwable) {
-                        }
-                        onComplete(result)
+                    try {
+                        Shizuku.unbindUserService(args, this, true)
+                    } catch (_: Throwable) {
                     }
+                    finish(result)
                 }.start()
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
-                mainHandler.post {
-                    onComplete(ShellResult(-1, "", "Shizuku UserService disconnected."))
-                }
+                finish(ShellResult(-1, "", "Shizuku UserService disconnected."))
             }
         }
 
         try {
             if (Shizuku.getVersion() < 10) {
-                onComplete(ShellResult(-1, "", "Shizuku API 10 or newer is required for UserService."))
+                finish(ShellResult(-1, "", "Shizuku API 10 or newer is required for UserService."))
                 return
             }
             Shizuku.bindUserService(args, connection)
         } catch (error: Throwable) {
-            onComplete(ShellResult(-1, "", error.message ?: "Could not bind Shizuku UserService."))
+            finish(ShellResult(-1, "", error.message ?: "Could not bind Shizuku UserService."))
         }
     }
 
