@@ -8,6 +8,10 @@ android {
     namespace = "com.shayan.apphub"
     compileSdk = 35
 
+    buildFeatures {
+        aidl = true
+    }
+
     defaultConfig {
         applicationId = "com.shayan.apphub"
         minSdk = 26
