@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -35,7 +35,7 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build Shayan Suite debug APK
-        run: gradle :suite:assembleDebug
+        run: gradle :suite:assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
