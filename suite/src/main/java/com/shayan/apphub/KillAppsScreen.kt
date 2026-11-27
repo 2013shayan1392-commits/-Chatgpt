@@ -49,6 +49,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,9 +62,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
@@ -182,6 +185,7 @@ private fun KillAppsScreenContent(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -213,6 +217,7 @@ private fun KillAppsScreenContent(
             IconButton(onClick = { showSettings = true }) {
                 Icon(Icons.Rounded.Settings, contentDescription = "تنظیمات")
             }
+        }
         }
         Divider(color = MaterialTheme.colorScheme.outlineVariant)
 
@@ -679,6 +684,7 @@ private fun MemoryCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Row(
             modifier = Modifier.fillMaxWidth().heightIn(min = 166.dp).padding(horizontal = 9.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -742,6 +748,7 @@ private fun MemoryCard(
                 Icon(Icons.Rounded.Refresh, contentDescription = "به‌روزرسانی RAM", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        }
     }
 }
 
@@ -751,12 +758,14 @@ private fun CategorySwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Row(
         modifier = Modifier.fillMaxWidth().height(48.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
     }
 }
 
