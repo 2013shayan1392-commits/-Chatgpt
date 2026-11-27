@@ -2,6 +2,9 @@ package com.shayan.apphub
 
 import android.app.ActivityManager
 import android.content.Intent
+import android.content.ComponentName
+import android.provider.Settings
+import android.provider.Settings.Secure
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Build
@@ -68,7 +71,8 @@ private enum class SuitePage { HOME, KILL_APPS, BREVENT }
 private data class InstalledApp(
     val label: String,
     val packageName: String,
-    val icon: ImageBitmap
+    val icon: ImageBitmap,
+    val isSystem: Boolean
 )
 
 class MainActivity : ComponentActivity() {
@@ -148,6 +152,8 @@ class MainActivity : ComponentActivity() {
                                 managedPackages = emptySet(),
                                 onBack = { currentPage = SuitePage.HOME },
                                 onConnect = ::connectShizuku,
+                                accessibilityEnabled = isKillAppsAccessibilityEnabled(),
+                                onEnableAccessibility = ::openAccessibilitySettings,
                                 onStop = ::stopWithKillApps
                             )
                         }
@@ -201,14 +207,13 @@ class MainActivity : ComponentActivity() {
             packageManager.getInstalledApplications(0)
                 .asSequence()
                 .filter { it.packageName != packageName }
-                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
-                .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
                 .mapNotNull { info ->
                     try {
                         InstalledApp(
                             label = packageManager.getApplicationLabel(info).toString(),
                             packageName = info.packageName,
-                            icon = packageManager.getApplicationIcon(info).toBitmap(96, 96).asImageBitmap()
+                            icon = packageManager.getApplicationIcon(info).toBitmap(96, 96).asImageBitmap(),
+                            isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
                         )
                     } catch (_: Exception) {
                         null
@@ -253,10 +258,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun isKillAppsAccessibilityEnabled(): Boolean {
+        val expected = ComponentName(this, KillAppsAccessibilityService::class.java).flattenToString()
+        val enabled = Secure.getString(contentResolver, Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
+
+    private fun openAccessibilitySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            operationMessage = "سرویس Shayan Suite را در بخش دسترس‌پذیری فعال کن و سپس به برنامه برگرد."
+        } catch (_: Exception) {
+            operationMessage = "باز کردن تنظیمات دسترس‌پذیری ممکن نشد."
+        }
+    }
+
     private fun stopWithKillApps(packages: Set<String>) {
         if (packages.isEmpty()) {
             operationMessage = "ابتدا حداقل یک برنامه را انتخاب کن."
             return
+        }
+
+        if (isKillAppsAccessibilityEnabled()) {
+            val started = KillAppsAccessibilityService.start(this, packages.toList()) { message ->
+                operationMessage = message
+            }
+            if (started) {
+                operationMessage = "دسترس‌پذیری فعال است؛ توقف برنامه‌های انتخاب‌شده از صفحهٔ اطلاعات برنامه‌ها آغاز شد."
+                return
+            }
         }
 
         if (ShizukuShell.hasPermission()) {
@@ -497,7 +527,9 @@ private fun EngineScreen(
     onConnect: () -> Unit,
     onStop: ((Set<String>) -> Unit)? = null,
     onRestrict: ((Set<String>) -> Unit)? = null,
-    onRestore: ((Set<String>) -> Unit)? = null
+    onRestore: ((Set<String>) -> Unit)? = null,
+    accessibilityEnabled: Boolean = false,
+    onEnableAccessibility: (() -> Unit)? = null
 ) {
     var selectedPackages by remember(title) { mutableStateOf(setOf<String>()) }
 
@@ -516,6 +548,32 @@ private fun EngineScreen(
         }
 
         Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        if (!isBrevent) {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("دسترس‌پذیری KillApps", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (accessibilityEnabled) "فعال است؛ توقف برنامه‌ها از رابط تنظیمات اندروید انجام می‌شود."
+                            else "برای کارکرد مشابه نسخه اصلی، این سرویس را فعال کن.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = { onEnableAccessibility?.invoke() }) {
+                        Text(if (accessibilityEnabled) "تنظیمات" else "فعال‌سازی")
+                    }
+                }
+            }
+        }
 
         Card(
             shape = RoundedCornerShape(18.dp),
@@ -561,7 +619,7 @@ private fun EngineScreen(
             if (isBrevent) {
                 "در مدیریت Brevent: " + managedPackages.size + " برنامه در فهرست محلی ثبت شده"
             } else {
-                "برنامه‌های قابل انتخاب: " + apps.size + " · انتخاب‌شده: " + selectedPackages.size
+                "همه برنامه‌ها: " + apps.size + " · سیستمی: " + apps.count { it.isSystem } + " · انتخاب‌شده: " + selectedPackages.size
             },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary
@@ -621,7 +679,7 @@ private fun EngineScreen(
             if (isBrevent) {
                 "توجه: این هسته قواعد AppOps اندروید را مدیریت می‌کند و کل موتور اختصاصی Brevent اصلی نیست. رفتار قواعد ممکن است با نسخهٔ اندروید و سازنده فرق کند."
             } else {
-                "فقط برنامه‌های کاربری نمایش داده می‌شوند. بستن اجباری ممکن است باعث از دست رفتن اطلاعات ذخیره‌نشده شود."
+                "برنامه‌های کاربری و سیستمی نمایش داده می‌شوند. توقف اجباری برخی برنامه‌های سیستمی ممکن است روی عملکرد گوشی اثر بگذارد."
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -676,6 +734,9 @@ private fun AppSelectionList(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                if (app.isSystem) {
+                                    Text("برنامهٔ سیستمی", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                                }
                             }
                             Checkbox(
                                 checked = app.packageName in selectedPackages,
