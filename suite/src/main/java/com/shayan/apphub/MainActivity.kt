@@ -1,13 +1,16 @@
 package com.shayan.apphub
 
-import android.content.ActivityNotFoundException
+import android.app.ActivityManager
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,283 +22,432 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Launch
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
+import rikka.shizuku.Shizuku
 
-private data class TargetApp(
-    val title: String,
-    val subtitle: String,
+private enum class SuitePage { HOME, KILL_APPS, BREVENT }
+
+private data class InstalledApp(
+    val label: String,
     val packageName: String,
-    val storeUrl: String,
-    val icon: ImageVector,
-    val accent: Color,
-    val details: String
-)
-
-private val targetApps = listOf(
-    TargetApp(
-        title = "Brevent",
-        subtitle = "مدیریت اجرای برنامه‌ها در پس‌زمینه",
-        packageName = "me.piebridge.brevent",
-        storeUrl = "https://play.google.com/store/apps/details?id=me.piebridge.brevent",
-        icon = Icons.Rounded.Security,
-        accent = Color(0xFF5578C7),
-        details = "نسخهٔ اصلی Brevent با تنظیمات، سرویس و مجوزهای خودش اجرا می‌شود. در Android 10 معمولاً USB debugging باید فعال بماند."
-    ),
-    TargetApp(
-        title = "KillApps",
-        subtitle = "بستن برنامه‌های در حال اجرا",
-        packageName = "com.tafayor.killall",
-        storeUrl = "https://play.google.com/store/apps/details?id=com.tafayor.killall",
-        icon = Icons.Rounded.Apps,
-        accent = Color(0xFF258A79),
-        details = "نسخهٔ اصلی KillApps با سرویس دسترس‌پذیری و تنظیمات خودش اجرا می‌شود. مجوزهای لازم را فقط داخل خود برنامه بررسی و فعال کن."
-    )
+    val icon: ImageBitmap
 )
 
 class MainActivity : ComponentActivity() {
-    private var installedPackages by mutableStateOf<Set<String>>(emptySet())
+    private var currentPage by mutableStateOf(SuitePage.HOME)
+    private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
+    private var shizukuRunning by mutableStateOf(false)
+    private var shizukuGranted by mutableStateOf(false)
+    private var operationMessage by mutableStateOf("")
+    private var managedPackages by mutableStateOf<Set<String>>(emptySet())
+
+    private val preferences by lazy {
+        getSharedPreferences("shayan_brevent_engine", MODE_PRIVATE)
+    }
+
+    private val permissionResultListener =
+        Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            if (requestCode == SHIZUKU_PERMISSION_REQUEST) {
+                runOnUiThread {
+                    refreshShizukuState()
+                    operationMessage = if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        "مجوز Shizuku داده شد."
+                    } else {
+                        "مجوز Shizuku رد شد."
+                    }
+                }
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        managedPackages = preferences.getStringSet("packages", emptySet())?.toSet() ?: emptySet()
         refreshInstalledApps()
+        refreshShizukuState()
+
         setContent {
-            AppHubScreen(
-                installedPackages = installedPackages,
-                deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}",
-                androidLabel = "Android ${Build.VERSION.RELEASE} · API ${Build.VERSION.SDK_INT}",
-                onOpen = ::openOrInstall
-            )
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        refreshInstalledApps()
-    }
-
-    private fun refreshInstalledApps() {
-        installedPackages = targetApps
-            .filter { isPackageInstalled(it.packageName) }
-            .map { it.packageName }
-            .toSet()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun isPackageInstalled(packageName: String): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                packageManager.getPackageInfo(
-                    packageName,
-                    PackageManager.PackageInfoFlags.of(0)
+            val dark = isSystemInDarkTheme()
+            val scheme = if (dark) {
+                darkColorScheme(
+                    primary = Color(0xFFB7C8FF),
+                    secondary = Color(0xFF9ED5C9),
+                    background = Color(0xFF10141C),
+                    surface = Color(0xFF191F2A),
+                    surfaceVariant = Color(0xFF252D3A)
                 )
             } else {
-                packageManager.getPackageInfo(packageName, 0)
+                lightColorScheme(
+                    primary = Color(0xFF365B9B),
+                    secondary = Color(0xFF287D70),
+                    background = Color(0xFFF5F7FC),
+                    surface = Color.White,
+                    surfaceVariant = Color(0xFFE8EDF6)
+                )
             }
-            true
-        } catch (_: PackageManager.NameNotFoundException) {
-            false
-        }
-    }
 
-    private fun openOrInstall(app: TargetApp) {
-        val launchIntent = packageManager.getLaunchIntentForPackage(app.packageName)
-        if (launchIntent != null) {
-            try {
-                startActivity(launchIntent)
-            } catch (_: ActivityNotFoundException) {
-                openStorePage(app.storeUrl)
-            }
-        } else {
-            openStorePage(app.storeUrl)
-        }
-    }
-
-    private fun openStorePage(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (_: ActivityNotFoundException) {
-            // There is no browser or store handler available on this device.
-        }
-    }
-}
-
-@Composable
-private fun AppHubScreen(
-    installedPackages: Set<String>,
-    deviceLabel: String,
-    androidLabel: String,
-    onOpen: (TargetApp) -> Unit
-) {
-    val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
-    val colors = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
-        dark -> darkColorScheme(
-            primary = Color(0xFFB7C8FF),
-            secondary = Color(0xFF9ED5C9),
-            background = Color(0xFF10141C),
-            surface = Color(0xFF191F2A),
-            surfaceVariant = Color(0xFF252D3A)
-        )
-        else -> lightColorScheme(
-            primary = Color(0xFF365B9B),
-            secondary = Color(0xFF287D70),
-            background = Color(0xFFF5F7FC),
-            surface = Color(0xFFFFFFFF),
-            surfaceVariant = Color(0xFFE8EDF6)
-        )
-    }
-
-    MaterialTheme(colorScheme = colors) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        text = "SHAYAN APP HUB",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
-                    Text(
-                        text = "مرکز برنامه‌ها",
-                        fontSize = 29.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        text = "هر ابزار را جداگانه و در محیط اصلی خودش اجرا کن.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Card(
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+            MaterialTheme(colorScheme = scheme) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.Rounded.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(25.dp)
+                    when (currentPage) {
+                        SuitePage.HOME -> HomeScreen(
+                            deviceLabel = Build.MANUFACTURER + " " + Build.MODEL,
+                            androidLabel = "Android " + Build.VERSION.RELEASE + " · API " + Build.VERSION.SDK_INT,
+                            onOpenKillApps = { currentPage = SuitePage.KILL_APPS },
+                            onOpenBrevent = { currentPage = SuitePage.BREVENT }
                         )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "جداسازی واقعی برنامه‌ها",
-                                fontWeight = FontWeight.SemiBold
+                        SuitePage.KILL_APPS -> {
+                            BackHandler { currentPage = SuitePage.HOME }
+                            EngineScreen(
+                                title = "KillApps",
+                                subtitle = "بستن برنامه‌های انتخاب‌شده",
+                                isBrevent = false,
+                                apps = installedApps,
+                                shellRunning = shizukuRunning,
+                                shellGranted = shizukuGranted,
+                                operationMessage = operationMessage,
+                                managedPackages = emptySet(),
+                                onBack = { currentPage = SuitePage.HOME },
+                                onConnect = ::connectShizuku,
+                                onStop = ::stopWithKillApps
                             )
-                            Text(
-                                text = "این هاب فقط اجراکننده است؛ Brevent و KillApps هویت اندرویدی، امضا، تنظیمات و فرایند مستقل خودشان را حفظ می‌کنند.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        SuitePage.BREVENT -> {
+                            BackHandler { currentPage = SuitePage.HOME }
+                            EngineScreen(
+                                title = "Brevent",
+                                subtitle = "مدیریت اجرای پس‌زمینه با قواعد AppOps",
+                                isBrevent = true,
+                                apps = installedApps,
+                                shellRunning = shizukuRunning,
+                                shellGranted = shizukuGranted,
+                                operationMessage = operationMessage,
+                                managedPackages = managedPackages,
+                                onBack = { currentPage = SuitePage.HOME },
+                                onConnect = ::connectShizuku,
+                                onRestrict = ::restrictWithBrevent,
+                                onRestore = ::restoreWithBrevent
                             )
                         }
                     }
                 }
-
-                targetApps.forEach { app ->
-                    AppCard(
-                        app = app,
-                        installed = app.packageName in installedPackages,
-                        onClick = { onOpen(app) }
-                    )
-                }
-
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(7.dp)
-                    ) {
-                        Text(
-                            text = "اطلاعات دستگاه",
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = deviceLabel,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = androidLabel,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Text(
-                    text = "برای حفظ نسخهٔ اصلی، هر برنامه باید یک‌بار جداگانه نصب باشد. اگر نصب نباشد، دکمهٔ همان کارت صفحهٔ رسمی دریافتش را باز می‌کند.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Shizuku.addRequestPermissionResultListener(permissionResultListener)
+        refreshShizukuState()
+    }
+
+    override fun onStop() {
+        Shizuku.removeRequestPermissionResultListener(permissionResultListener)
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshShizukuState()
+    }
+
+    private fun refreshShizukuState() {
+        shizukuRunning = ShizukuShell.isBinderAlive()
+        shizukuGranted = ShizukuShell.hasPermission()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun refreshInstalledApps() {
+        installedApps = try {
+            packageManager.getInstalledApplications(0)
+                .asSequence()
+                .filter { it.packageName != packageName }
+                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
+                .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
+                .mapNotNull { info ->
+                    try {
+                        InstalledApp(
+                            label = packageManager.getApplicationLabel(info).toString(),
+                            packageName = info.packageName,
+                            icon = packageManager.getApplicationIcon(info).toBitmap(96, 96).asImageBitmap()
+                        )
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                .sortedBy { it.label.lowercase() }
+                .toList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun connectShizuku() {
+        refreshShizukuState()
+        if (!shizukuRunning) {
+            val launch = packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE)
+            if (launch != null) {
+                startActivity(launch)
+            } else {
+                openExternal("https://shizuku.rikka.app/")
+            }
+            operationMessage = "Shizuku را اجرا و سرویس آن را فعال کن؛ سپس به این برنامه برگرد."
+            return
+        }
+        if (!shizukuGranted) {
+            try {
+                Shizuku.requestPermission(SHIZUKU_PERMISSION_REQUEST)
+                operationMessage = "درخواست مجوز Shizuku ارسال شد."
+            } catch (error: Exception) {
+                operationMessage = "درخواست مجوز انجام نشد: " + (error.message ?: "خطای نامشخص")
+            }
+        } else {
+            operationMessage = "اتصال Shizuku و مجوز آن آماده است."
+        }
+    }
+
+    private fun openExternal(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: Exception) {
+            operationMessage = "مرورگر برای باز کردن لینک در دسترس نیست."
+        }
+    }
+
+    private fun stopWithKillApps(packages: Set<String>) {
+        if (packages.isEmpty()) {
+            operationMessage = "ابتدا حداقل یک برنامه را انتخاب کن."
+            return
+        }
+
+        if (ShizukuShell.hasPermission()) {
+            runPrivileged(
+                KillAppsEngine.forceStopScript(packages),
+                "KillApps: درخواست Force stop برای " + packages.size + " برنامه اجرا شد."
+            )
+        } else {
+            val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+            var requested = 0
+            packages.forEach { packageName ->
+                try {
+                    manager.killBackgroundProcesses(packageName)
+                    requested++
+                } catch (_: Exception) {
+                    // Android or the OEM may reject this request.
+                }
+            }
+            operationMessage =
+                "درخواست بستن پس‌زمینه برای " + requested + " برنامه فرستاده شد. این روش Force stop کامل نیست؛ برای عملکرد کامل‌تر، Shizuku را وصل کن."
+        }
+    }
+
+    private fun restrictWithBrevent(packages: Set<String>) {
+        if (packages.isEmpty()) {
+            operationMessage = "ابتدا برنامه‌های موردنظر را انتخاب کن."
+            return
+        }
+        if (!ShizukuShell.hasPermission()) {
+            operationMessage = "برای اعمال قواعد Brevent، اتصال و مجوز Shizuku لازم است."
+            return
+        }
+        runPrivileged(BreventEngine.restrictScript(packages)) {
+            managedPackages = (managedPackages + packages).toSet()
+            saveManagedPackages()
+            operationMessage = "قواعد پس‌زمینه برای " + packages.size + " برنامه اعمال شد."
+        }
+    }
+
+    private fun restoreWithBrevent(packages: Set<String>) {
+        if (packages.isEmpty()) {
+            operationMessage = "ابتدا برنامه‌هایی را که می‌خواهی از مدیریت خارج شوند انتخاب کن."
+            return
+        }
+        if (!ShizukuShell.hasPermission()) {
+            operationMessage = "برای بازگردانی قواعد، اتصال و مجوز Shizuku لازم است."
+            return
+        }
+        runPrivileged(BreventEngine.restoreScript(packages)) {
+            managedPackages = (managedPackages - packages).toSet()
+            saveManagedPackages()
+            operationMessage = "قواعد برنامه‌های انتخاب‌شده به حالت پیش‌فرض برگشت."
+        }
+    }
+
+    private fun saveManagedPackages() {
+        preferences.edit().putStringSet("packages", managedPackages.toSet()).apply()
+    }
+
+    private fun runPrivileged(script: String, successMessage: String) {
+        runPrivileged(script) { operationMessage = successMessage }
+    }
+
+    private fun runPrivileged(script: String, onSuccess: () -> Unit) {
+        if (!ShizukuShell.hasPermission()) {
+            operationMessage = "Shizuku فعال نیست یا مجوز آن به Shayan Suite داده نشده است."
+            return
+        }
+        operationMessage = "در حال اجرای عملیات..."
+        Thread {
+            val result = try {
+                ShizukuShell.execute(script)
+            } catch (error: Exception) {
+                ShellResult(-1, "", error.message ?: "خطای نامشخص")
+            }
+            runOnUiThread {
+                refreshShizukuState()
+                if (result.exitCode == 0) {
+                    onSuccess()
+                } else {
+                    operationMessage = "عملیات کامل نشد (کد " + result.exitCode + "): " +
+                        (result.stderr.ifBlank { result.stdout }.ifBlank { "فرمان توسط سیستم رد شد." })
+                }
+            }
+        }.start()
+    }
+
+    companion object {
+        private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+        private const val SHIZUKU_PERMISSION_REQUEST = 100
     }
 }
 
 @Composable
-private fun AppCard(
-    app: TargetApp,
-    installed: Boolean,
+private fun HomeScreen(
+    deviceLabel: String,
+    androidLabel: String,
+    onOpenKillApps: () -> Unit,
+    onOpenBrevent: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+                text = "SHAYAN SUITE",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
+            )
+            Text("مرکز ابزارها", fontSize = 29.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "دو ابزار مستقل، داخل یک APK",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Card(
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(Icons.Rounded.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("محیط‌های داخلی مستقل", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "با انتخاب هر کارت، صفحهٔ همان ابزار در Shayan Suite باز می‌شود؛ APK جداگانه اجرا نمی‌شود.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        SuiteAppCard(
+            title = "Brevent",
+            subtitle = "مدیریت اجرای برنامه‌ها در پس‌زمینه",
+            details = "محیط مستقل مدیریت قواعد پس‌زمینه و بازگردانی آن‌ها.",
+            icon = Icons.Rounded.Security,
+            accent = Color(0xFF5578C7),
+            onClick = onOpenBrevent
+        )
+
+        SuiteAppCard(
+            title = "KillApps",
+            subtitle = "بستن برنامه‌های در حال اجرا",
+            details = "فهرست برنامه‌ها، انتخاب چندگانه و اجرای درخواست بستن.",
+            icon = Icons.Rounded.Apps,
+            accent = Color(0xFF258A79),
+            onClick = onOpenKillApps
+        )
+
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Text("اطلاعات دستگاه", fontWeight = FontWeight.SemiBold)
+                Text(deviceLabel, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    androidLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SuiteAppCard(
+    title: String,
+    subtitle: String,
+    details: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accent: Color,
     onClick: () -> Unit
 ) {
     Card(
@@ -313,68 +465,233 @@ private fun AppCard(
             ) {
                 Surface(
                     shape = RoundedCornerShape(17.dp),
-                    color = app.accent.copy(alpha = 0.13f),
+                    color = accent.copy(alpha = 0.13f),
                     modifier = Modifier.size(55.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        androidx.compose.material3.Icon(
-                            imageVector = app.icon,
-                            contentDescription = app.title,
-                            tint = app.accent,
-                            modifier = Modifier.size(29.dp)
-                        )
+                        Icon(icon, contentDescription = title, tint = accent, modifier = Modifier.size(29.dp))
                     }
                 }
                 Column(modifier = Modifier.weight(1f)) {
+                    Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        text = app.title,
-                        fontSize = 21.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = app.subtitle,
+                        subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    androidx.compose.material3.Icon(
-                        imageVector = Icons.Rounded.CheckCircle,
+                Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF24936F))
+            }
+            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) {
+                Text("ورود به " + title)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EngineScreen(
+    title: String,
+    subtitle: String,
+    isBrevent: Boolean,
+    apps: List<InstalledApp>,
+    shellRunning: Boolean,
+    shellGranted: Boolean,
+    operationMessage: String,
+    managedPackages: Set<String>,
+    onBack: () -> Unit,
+    onConnect: () -> Unit,
+    onStop: ((Set<String>) -> Unit)? = null,
+    onRestrict: ((Set<String>) -> Unit)? = null,
+    onRestore: ((Set<String>) -> Unit)? = null
+) {
+    var selectedPackages by remember(title) { mutableStateOf(setOf<String>()) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onBack) {
+                Icon(Icons.Rounded.ArrowBack, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text("بازگشت")
+            }
+            Spacer(Modifier.weight(1f))
+            Text(title, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(13.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.Security,
                         contentDescription = null,
-                        tint = if (installed) Color(0xFF24936F) else MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(16.dp)
+                        tint = if (shellGranted) Color(0xFF24936F) else MaterialTheme.colorScheme.primary
                     )
+                    Spacer(Modifier.size(8.dp))
                     Text(
-                        text = if (installed) "نصب‌شده" else "نصب‌نشده",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        when {
+                            shellGranted -> "Shizuku متصل و مجاز"
+                            shellRunning -> "Shizuku اجراست؛ مجوز برنامه لازم است"
+                            else -> "Shizuku متصل نیست"
+                        },
+                        fontWeight = FontWeight.SemiBold
                     )
+                    Spacer(Modifier.weight(1f))
+                    OutlinedButton(onClick = onConnect) {
+                        Text(if (shellGranted) "بررسی" else "اتصال")
+                    }
+                }
+                Text(
+                    if (isBrevent) {
+                        "برای اعمال و بازگردانی قواعد پس‌زمینه، دسترسی ADB از طریق Shizuku لازم است."
+                    } else {
+                        "با Shizuku درخواست Force stop اجرا می‌شود؛ بدون آن فقط درخواست محدود بستن پردازهٔ پس‌زمینه ارسال می‌شود."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Text(
+            if (isBrevent) {
+                "در مدیریت Brevent: " + managedPackages.size + " برنامه در فهرست محلی ثبت شده"
+            } else {
+                "برنامه‌های قابل انتخاب: " + apps.size + " · انتخاب‌شده: " + selectedPackages.size
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        AppSelectionList(
+            apps = apps,
+            selectedPackages = selectedPackages,
+            onToggle = { packageName ->
+                selectedPackages = if (packageName in selectedPackages) selectedPackages - packageName
+                else selectedPackages + packageName
+            },
+            modifier = Modifier.weight(1f)
+        )
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { selectedPackages = apps.map { it.packageName }.toSet() }, modifier = Modifier.weight(1f)) {
+                Text("انتخاب همه")
+            }
+            OutlinedButton(onClick = { selectedPackages = emptySet() }, modifier = Modifier.weight(1f)) {
+                Text("پاک‌کردن انتخاب")
+            }
+        }
+
+        if (isBrevent) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { onRestrict?.invoke(selectedPackages) },
+                    enabled = selectedPackages.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("اعمال محدودیت")
+                }
+                OutlinedButton(
+                    onClick = { onRestore?.invoke(selectedPackages) },
+                    enabled = selectedPackages.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("بازگردانی")
                 }
             }
-
-            Divider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Text(
-                text = app.details,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
+        } else {
             Button(
-                onClick = onClick,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(15.dp)
+                onClick = { onStop?.invoke(selectedPackages) },
+                enabled = selectedPackages.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                androidx.compose.material3.Icon(
-                    imageVector = if (installed) Icons.Rounded.Launch else Icons.Rounded.Apps,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Text(if (installed) "باز کردن ${app.title}" else "دریافت نسخهٔ اصلی")
+                Text("بستن " + selectedPackages.size + " برنامه")
+            }
+        }
+
+        if (operationMessage.isNotBlank()) {
+            Text(operationMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        Text(
+            if (isBrevent) {
+                "توجه: این هسته قواعد AppOps اندروید را مدیریت می‌کند و کل موتور اختصاصی Brevent اصلی نیست. رفتار قواعد ممکن است با نسخهٔ اندروید و سازنده فرق کند."
+            } else {
+                "فقط برنامه‌های کاربری نمایش داده می‌شوند. بستن اجباری ممکن است باعث از دست رفتن اطلاعات ذخیره‌نشده شود."
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Start
+        )
+    }
+}
+
+@Composable
+private fun AppSelectionList(
+    apps: List<InstalledApp>,
+    selectedPackages: Set<String>,
+    onToggle: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var search by remember { mutableStateOf("") }
+    val filtered = apps.filter {
+        it.label.contains(search, ignoreCase = true) || it.packageName.contains(search, ignoreCase = true)
+    }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("جست‌وجوی برنامه") }
+        )
+
+        if (filtered.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("برنامه‌ای پیدا نشد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                items(filtered, key = { it.packageName }) { app ->
+                    Card(
+                        shape = RoundedCornerShape(15.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        modifier = Modifier.fillMaxWidth().clickable { onToggle(app.packageName) }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Image(bitmap = app.icon, contentDescription = app.label, modifier = Modifier.size(38.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(app.label, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    app.packageName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Checkbox(
+                                checked = app.packageName in selectedPackages,
+                                onCheckedChange = { onToggle(app.packageName) }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
