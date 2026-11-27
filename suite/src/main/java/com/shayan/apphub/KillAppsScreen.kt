@@ -260,34 +260,57 @@ private fun KillAppsScreenContent(
             }
 
             item {
-                Card(
-                    shape = RoundedCornerShape(15.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
-                        CategorySwitchRow(
-                            label = "برنامه‌های کاربری",
-                            checked = includeUserApps,
-                            onCheckedChange = {
-                                includeUserApps = it
-                                killPrefs.edit().putBoolean("include_user_apps", it).apply()
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(7.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp)) {
+                                CategorySwitchRow(
+                                    label = "برنامه‌های کاربری",
+                                    checked = includeUserApps,
+                                    onCheckedChange = {
+                                        includeUserApps = it
+                                        killPrefs.edit().putBoolean("include_user_apps", it).apply()
+                                    }
+                                )
+                                Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                                CategorySwitchRow(
+                                    label = "برنامه‌های سیستمی",
+                                    checked = includeSystemApps,
+                                    onCheckedChange = {
+                                        includeSystemApps = it
+                                        killPrefs.edit().putBoolean("include_system_apps", it).apply()
+                                    }
+                                )
                             }
-                        )
-                        Divider(color = MaterialTheme.colorScheme.outlineVariant)
-                        CategorySwitchRow(
-                            label = "برنامه‌های سیستمی",
-                            checked = includeSystemApps,
-                            onCheckedChange = {
-                                includeSystemApps = it
-                                killPrefs.edit().putBoolean("include_system_apps", it).apply()
+                        }
+                        Card(
+                            modifier = Modifier.width(72.dp).height(108.dp).clickable { requestClose() },
+                            shape = RoundedCornerShape(7.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Box(
+                                    modifier = Modifier.size(61.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.PlayArrow,
+                                        contentDescription = "شروع",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(43.dp)
+                                    )
+                                }
                             }
-                        )
-                        Text(
-                            "توقف اجباری بعضی برنامه‌های سیستمی ممکن است روی عملکرد گوشی اثر بگذارد.",
-                            modifier = Modifier.padding(top = 4.dp, bottom = 5.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        }
                     }
                 }
             }
@@ -427,37 +450,6 @@ private fun KillAppsScreenContent(
             }
         }
 
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 5.dp
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        if (mode == KillAppsListMode.ALL) "${packagesToClose.size} برنامه برای پردازش" else "${selectedVisible.size} برنامه انتخاب شده",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        if (mode == KillAppsListMode.ALL) "حالت همهٔ برنامه‌ها" else "حالت فهرست سفارشی",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Button(
-                    onClick = { requestClose() },
-                    enabled = packagesToClose.isNotEmpty(),
-                    shape = CircleShape,
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(5.dp))
-                    Text("شروع")
-                }
-            }
-        }
     }
 
     when (permissionStep) {
