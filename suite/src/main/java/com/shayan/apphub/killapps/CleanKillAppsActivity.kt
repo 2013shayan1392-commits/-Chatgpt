@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,6 +52,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,9 +81,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import java.util.Locale
+import com.shayan.apphub.KillAppsEngine
+import com.shayan.apphub.ShizukuShell
 
 private const val CLEAN_PREFS = "killapps_fresh_state_v1"
-private const val RECENT_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
+private const val RECENT_WINDOW_MS = 24L * 60L * 60L * 1000L
+private const val LAUNCHED_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
 
 data class KillAppsPackage(
     val packageName: String,
@@ -91,7 +98,7 @@ data class KillAppsPackage(
 )
 
 private enum class KillAppsFilter {
-    RECENT, ALL, PERSISTENT, CUSTOM, EXCEPTIONS, FAILED
+    RECENT, ALL, LAUNCHED, PERSISTENT, SYSTEM, CUSTOM, EXCEPTIONS, FAILED
 }
 
 class CleanKillAppsActivity : ComponentActivity() {
@@ -164,8 +171,9 @@ private class KillAppsRepository(context: Context) {
     fun loadApps(): List<KillAppsPackage> {
         val now = System.currentTimeMillis()
         val lastUsed = readLastUsed()
+        val persistentPackages = readPersistentPackages()
         return try {
-            appContext.packageManager.getInstalledApplications(0)
+            appContext.packageManager.getInstalledApplications(PackageManager.MATCH_DISABLED_COMPONENTS)
                 .asSequence()
                 .filter { it.packageName != appContext.packageName }
                 .map { info ->
@@ -175,7 +183,7 @@ private class KillAppsRepository(context: Context) {
                         info.packageName
                     }
                     val system = (info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
-                    val persistent = (info.flags and ApplicationInfo.FLAG_PERSISTENT) != 0
+                    val persistent = (info.flags and ApplicationInfo.FLAG_PERSISTENT) != 0 || info.packageName in persistentPackages
                     KillAppsPackage(
                         packageName = info.packageName,
                         label = label,
@@ -195,11 +203,24 @@ private class KillAppsRepository(context: Context) {
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun readPersistentPackages(): Set<String> {
+        return try {
+            val manager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            manager.runningAppProcesses.orEmpty()
+                .filter { it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERSISTENT }
+                .flatMap { it.pkgList.orEmpty().asList() }
+                .toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
     private fun readLastUsed(): Map<String, Long> {
         return try {
             val manager = appContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val end = System.currentTimeMillis()
-            val start = end - RECENT_WINDOW_MS
+            val start = end - LAUNCHED_WINDOW_MS
             manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
                 .orEmpty()
                 .groupBy { it.packageName }
@@ -263,6 +284,12 @@ private class KillAppsRepository(context: Context) {
         prefs.edit().putBoolean("show_progress", value).apply()
     }
 
+    fun useShizuku(): Boolean = prefs.getBoolean("use_shizuku", true)
+
+    fun setUseShizuku(value: Boolean) {
+        prefs.edit().putBoolean("use_shizuku", value).apply()
+    }
+
     private fun isCorePackage(packageName: String): Boolean {
         val protected = setOf(
             "android",
@@ -301,6 +328,9 @@ private fun CleanKillAppsScreen(
     var accessibilityEnabled by remember { mutableStateOf(repository.isAccessibilityEnabled()) }
     var overlayAllowed by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var showProgress by remember { mutableStateOf(repository.showProgress()) }
+    var preferShizuku by remember { mutableStateOf(repository.useShizuku()) }
+    var shizukuAvailable by remember { mutableStateOf(ShizukuShell.hasPermission()) }
+    var shizukuRunning by remember { mutableStateOf(false) }
     var memory by remember { mutableStateOf(readMemory(context)) }
     var showSettings by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
@@ -314,6 +344,8 @@ private fun CleanKillAppsScreen(
         accessibilityEnabled = repository.isAccessibilityEnabled()
         overlayAllowed = Settings.canDrawOverlays(context)
         showProgress = repository.showProgress()
+        preferShizuku = repository.useShizuku()
+        shizukuAvailable = ShizukuShell.hasPermission()
         memory = readMemory(context)
     }
 
@@ -323,7 +355,9 @@ private fun CleanKillAppsScreen(
         val filterAllowed = when (filter) {
             KillAppsFilter.RECENT -> app.lastUsedAt >= now - RECENT_WINDOW_MS
             KillAppsFilter.ALL -> true
+            KillAppsFilter.LAUNCHED -> app.lastUsedAt >= now - LAUNCHED_WINDOW_MS
             KillAppsFilter.PERSISTENT -> app.isPersistent
+            KillAppsFilter.SYSTEM -> app.isSystem
             KillAppsFilter.CUSTOM -> app.packageName in customSelection
             KillAppsFilter.EXCEPTIONS -> app.packageName in exceptions
             KillAppsFilter.FAILED -> app.packageName in failed
@@ -333,6 +367,38 @@ private fun CleanKillAppsScreen(
                 app.label.contains(search, ignoreCase = true) ||
                 app.packageName.contains(search, ignoreCase = true)
             )
+    }
+
+    fun openAppSettings(packageName: String) {
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+            )
+        } catch (_: Exception) {
+            notice = "صفحهٔ اطلاعات برنامه باز نشد."
+        }
+    }
+
+    fun launchApp(packageName: String) {
+        try {
+            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            if (intent == null) notice = "برای این برنامه صفحهٔ اجرای مستقیمی پیدا نشد."
+            else context.startActivity(intent)
+        } catch (_: Exception) {
+            notice = "اجرای برنامه ممکن نشد."
+        }
+    }
+
+    fun toggleException(packageName: String) {
+        exceptions = if (packageName in exceptions) exceptions - packageName else exceptions + packageName
+        repository.setExceptions(exceptions)
+        notice = if (packageName in exceptions) "برنامه به استثناها اضافه شد." else "برنامه از استثناها حذف شد."
+    }
+
+    fun toggleCustom(packageName: String) {
+        customSelection = if (packageName in customSelection) customSelection - packageName else customSelection + packageName
+        repository.setCustomSelection(customSelection)
+        notice = if (packageName in customSelection) "برنامه به فهرست سفارشی اضافه شد." else "برنامه از فهرست سفارشی حذف شد."
     }
 
     fun openAccessibilitySettings() {
@@ -374,13 +440,45 @@ private fun CleanKillAppsScreen(
             notice = "برای شروع، دست‌کم یک برنامه را انتخاب کن."
             return
         }
-        if (!accessibilityEnabled) {
-            openAccessibilitySettings()
-            return
-        }
         val queue = selected.filter { it !in exceptions }
         if (queue.isEmpty()) {
             notice = "تمام برنامه‌های انتخاب‌شده در فهرست استثناها هستند."
+            return
+        }
+        if (preferShizuku && ShizukuShell.hasPermission()) {
+            shizukuRunning = true
+            notice = "در حال توقف مستقیم برنامه‌ها با مجوز Shizuku..."
+            try {
+                ShizukuShell.execute(context, KillAppsEngine.forceStopScript(queue.toSet())) { result ->
+                    shizukuRunning = false
+                    val lines = result.stdout.lineSequence().map { it.trim() }.toList()
+                    val succeeded = lines.filter { it.startsWith("SHAYAN_OK:") }
+                        .map { it.removePrefix("SHAYAN_OK:").trim() }.toSet()
+                    val reportedFailed = lines.filter { it.startsWith("SHAYAN_FAIL:") }
+                        .map { it.removePrefix("SHAYAN_FAIL:").trim() }.toSet()
+                    val failedNow = if (result.exitCode == 0) {
+                        (queue.toSet() - succeeded) + reportedFailed
+                    } else {
+                        queue.toSet() - succeeded
+                    }
+                    val updatedFailures = (failed - queue.toSet()) + failedNow
+                    failed = updatedFailures
+                    repository.setFailed(updatedFailures)
+                    selected = emptySet()
+                    notice = if (failedNow.isEmpty()) {
+                        "توقف مستقیم ${succeeded.size} برنامه انجام شد."
+                    } else {
+                        "${succeeded.size} برنامه متوقف شد؛ ${failedNow.size} مورد ناموفق بود. جزئیات در فهرست ناموفق‌ها ثبت شد."
+                    }
+                }
+            } catch (_: Exception) {
+                shizukuRunning = false
+                notice = "اجرای دستور Shizuku ناموفق بود؛ دسترسی Shizuku را بررسی کن."
+            }
+            return
+        }
+        if (!accessibilityEnabled) {
+            openAccessibilitySettings()
             return
         }
         val labels = apps.associate { it.packageName to it.label }
@@ -459,7 +557,7 @@ private fun CleanKillAppsScreen(
             }
         }
 
-        if (!accessibilityEnabled) {
+        if (!accessibilityEnabled && !(preferShizuku && shizukuAvailable)) {
             PermissionCard(
                 title = "دسترسی دسترس‌پذیری لازم است",
                 description = "این دسترسی برای بازکردن صفحهٔ اطلاعات برنامه و انجام توقف اجباری لازم است.",
@@ -491,9 +589,19 @@ private fun CleanKillAppsScreen(
                 label = { Text("همه") }
             )
             FilterChip(
+                selected = filter == KillAppsFilter.LAUNCHED,
+                onClick = { filter = KillAppsFilter.LAUNCHED; selected = emptySet() },
+                label = { Text("اجراشده") }
+            )
+            FilterChip(
                 selected = filter == KillAppsFilter.PERSISTENT,
                 onClick = { filter = KillAppsFilter.PERSISTENT; selected = emptySet() },
                 label = { Text("ماندگار") }
+            )
+            FilterChip(
+                selected = filter == KillAppsFilter.SYSTEM,
+                onClick = { filter = KillAppsFilter.SYSTEM; selected = emptySet() },
+                label = { Text("سیستمی") }
             )
             FilterChip(
                 selected = filter == KillAppsFilter.CUSTOM,
@@ -539,14 +647,20 @@ private fun CleanKillAppsScreen(
                     Text("سیستمی", style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = {
-                    selected = if (filter == KillAppsFilter.EXCEPTIONS || filter == KillAppsFilter.FAILED) {
-                        visibleApps.map { it.packageName }.toSet()
+                    val allSelected = visibleApps.isNotEmpty() && visibleApps.all { it.packageName in selected }
+                    if (allSelected) {
+                        selected = selected - visibleApps.map { it.packageName }.toSet()
                     } else {
-                        visibleApps.filterNot { it.isProtected || it.packageName in exceptions }
-                            .map { it.packageName }.toSet()
+                        val selectable = if (filter == KillAppsFilter.EXCEPTIONS || filter == KillAppsFilter.FAILED) {
+                            visibleApps.map { it.packageName }.toSet()
+                        } else {
+                            visibleApps.filterNot { it.isProtected || it.packageName in exceptions }
+                                .map { it.packageName }.toSet()
+                        }
+                        selected = selected + selectable
                     }
                 }) {
-                    Text("انتخاب فهرست")
+                    Text(if (visibleApps.isNotEmpty() && visibleApps.all { it.packageName in selected }) "لغو انتخاب" else "انتخاب همه")
                 }
             }
         }
@@ -560,7 +674,9 @@ private fun CleanKillAppsScreen(
                     when (filter) {
                         KillAppsFilter.RECENT -> if (usageAccess) "برنامه‌ای در بازهٔ اخیر پیدا نشد." else "برای مشاهدهٔ فهرست اخیر، آمار استفاده را فعال کن."
                         KillAppsFilter.ALL -> "برنامه‌ای پیدا نشد."
+                        KillAppsFilter.LAUNCHED -> "برنامهٔ اجراشده‌ای در هفت روز گذشته ثبت نشده است."
                         KillAppsFilter.PERSISTENT -> "برنامهٔ ماندگاری پیدا نشد."
+                        KillAppsFilter.SYSTEM -> "برنامهٔ سیستمی پیدا نشد."
                         KillAppsFilter.CUSTOM -> "فهرست سفارشی خالی است."
                         KillAppsFilter.EXCEPTIONS -> "فهرست استثناها خالی است."
                         KillAppsFilter.FAILED -> "مورد ناموفقی ثبت نشده است."
@@ -583,7 +699,11 @@ private fun CleanKillAppsScreen(
                         inExceptionView = filter == KillAppsFilter.EXCEPTIONS,
                         onChecked = { checked ->
                             selected = if (checked) selected + item.packageName else selected - item.packageName
-                        }
+                        },
+                        onOpenSettings = { openAppSettings(item.packageName) },
+                        onLaunch = { launchApp(item.packageName) },
+                        onToggleException = { toggleException(item.packageName) },
+                        onToggleCustom = { toggleCustom(item.packageName) }
                     )
                 }
             }
@@ -602,6 +722,16 @@ private fun CleanKillAppsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        if (filter == KillAppsFilter.LAUNCHED) {
+            Text(
+                "این فهرست براساس آمار استفادهٔ ۷ روز گذشته ساخته شده و به معنی فعال‌بودن قطعی پردازه در همین لحظه نیست.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (shizukuRunning) {
+            Text("در حال اجرای فرمان‌های توقف با Shizuku...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
         if (operationRunning) {
             OutlinedButton(
@@ -702,6 +832,27 @@ private fun CleanKillAppsScreen(
                             onCheckedChange = {
                                 showProgress = it
                                 repository.setShowProgress(it)
+                            }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("استفاده از Shizuku در صورت دسترسی")
+                            Text(
+                                if (shizukuAvailable) "مجوز Shizuku فعال است؛ توقف مستقیم بدون بازکردن صفحهٔ تنظیمات انجام می‌شود."
+                                else "در صورت نبود مجوز Shizuku، از دسترس‌پذیری برای توقف برنامه‌ها استفاده می‌شود.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = preferShizuku,
+                            onCheckedChange = {
+                                preferShizuku = it
+                                repository.setUseShizuku(it)
                             }
                         )
                     }
@@ -833,8 +984,13 @@ private fun KillAppsRow(
     isException: Boolean,
     failed: Boolean,
     inExceptionView: Boolean,
-    onChecked: (Boolean) -> Unit
+    onChecked: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
+    onLaunch: () -> Unit,
+    onToggleException: () -> Unit,
+    onToggleCustom: () -> Unit
 ) {
+    var menuExpanded by remember(item.packageName) { mutableStateOf(false) }
     val icon = remember(item.packageName) {
         try {
             context.packageManager.getApplicationIcon(item.packageName)
@@ -886,6 +1042,29 @@ private fun KillAppsRow(
                 enabled = !item.isProtected || inExceptionView,
                 onCheckedChange = onChecked
             )
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "گزینه‌های ${item.label}")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("باز کردن برنامه") },
+                        onClick = { menuExpanded = false; onLaunch() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("اطلاعات برنامه") },
+                        onClick = { menuExpanded = false; onOpenSettings() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (isException) "حذف از استثناها" else "افزودن به استثناها") },
+                        onClick = { menuExpanded = false; onToggleException() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("افزودن/حذف از فهرست سفارشی") },
+                        onClick = { menuExpanded = false; onToggleCustom() }
+                    )
+                }
+            }
         }
     }
 }
