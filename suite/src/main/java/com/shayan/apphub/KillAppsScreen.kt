@@ -52,7 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.drawArc
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -245,6 +244,21 @@ fun KillAppsScreen(
                 }
             }
 
+            if (operationMessage.isNotBlank()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Text(
+                            operationMessage,
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
             if (visibleApps.isEmpty()) {
                 item {
                     Box(
@@ -305,19 +319,6 @@ fun KillAppsScreen(
                 }
             }
         }
-    }
-
-    if (operationMessage.isNotBlank()) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("KillApps") },
-            text = { Text(operationMessage) },
-            confirmButton = {
-                TextButton(onClick = { }) {
-                    Text("باشه")
-                }
-            }
-        )
     }
 
     when (permissionStep) {
@@ -423,6 +424,8 @@ private fun MemoryCard(
     freeBytes: Long,
     onRefresh: () -> Unit
 ) {
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val progressColor = MaterialTheme.colorScheme.primary
     val ratio = if (totalBytes > 0L) (usedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
     Card(
         shape = RoundedCornerShape(15.dp),
@@ -437,14 +440,14 @@ private fun MemoryCard(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val width = 8.dp.toPx()
                     drawArc(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = trackColor,
                         startAngle = -90f,
                         sweepAngle = 360f,
                         useCenter = false,
                         style = Stroke(width = width, cap = StrokeCap.Round)
                     )
                     drawArc(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = progressColor,
                         startAngle = -90f,
                         sweepAngle = ratio * 360f,
                         useCenter = false,
