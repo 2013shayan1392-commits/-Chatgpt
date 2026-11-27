@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="clean_killapps_accessibility_label">Shayan Suite app management</string>
+    <string name="clean_killapps_accessibility_description">Uses the selected apps list to navigate Android app information screens and request force stop after user confirmation.</string>
+</resources>
